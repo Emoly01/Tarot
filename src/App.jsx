@@ -100,6 +100,7 @@ function getReflectionPrompts(phase) {
     ],
   };
   const list = prompts[phase] || prompts["New Moon"];
+  // Pick one based on the day so it feels fresh but consistent within a day
   const today = new Date();
   const dayHash = today.getFullYear() * 366 + today.getMonth() * 31 + today.getDate();
   return list[dayHash % list.length];
@@ -128,7 +129,7 @@ const MINOR_ARCANA = [
 ];
 const ALL_CARDS = [...MAJOR_ARCANA, ...MINOR_ARCANA];
 
-// ── Card Meanings ────────────────────────────────────────────
+// ── Card Meanings (short & sweet) ────────────────────────────
 const CARD_MEANINGS = {
   "The Fool": { up: "New beginnings, spontaneity, a leap of faith", rev: "Recklessness, fear of the unknown, holding back" },
   "The Magician": { up: "Willpower, manifestation, resourcefulness", rev: "Manipulation, untapped potential, trickery" },
@@ -152,6 +153,7 @@ const CARD_MEANINGS = {
   "The Sun": { up: "Joy, success, vitality, confidence", rev: "Dimmed joy, temporary setbacks, inner child wounded" },
   "Judgement": { up: "Reflection, reckoning, inner calling, absolution", rev: "Self-doubt, refusal of the call, harsh self-judgement" },
   "The World": { up: "Completion, integration, accomplishment, wholeness", rev: "Incompletion, shortcuts, delayed closure" },
+  // Wands
   "Ace of Wands": { up: "Inspiration, new creative spark, potential", rev: "Delays, lack of motivation, missed opportunity" },
   "Two of Wands": { up: "Planning, future vision, decisions ahead", rev: "Fear of the unknown, lack of planning" },
   "Three of Wands": { up: "Expansion, foresight, momentum building", rev: "Delays, frustration, playing it too safe" },
@@ -166,6 +168,7 @@ const CARD_MEANINGS = {
   "Knight of Wands": { up: "Action, adventure, impulsiveness, passion", rev: "Haste, recklessness, scattered energy" },
   "Queen of Wands": { up: "Confidence, warmth, fierce independence", rev: "Jealousy, insecurity, demanding nature" },
   "King of Wands": { up: "Leadership, vision, bold action, charisma", rev: "Impulsiveness, arrogance, ruthlessness" },
+  // Cups
   "Ace of Cups": { up: "New love, emotional awakening, compassion", rev: "Blocked emotions, emptiness, repressed feelings" },
   "Two of Cups": { up: "Partnership, mutual attraction, connection", rev: "Imbalance in relationship, miscommunication" },
   "Three of Cups": { up: "Friendship, celebration, community, joy", rev: "Overindulgence, gossip, isolation" },
@@ -180,6 +183,7 @@ const CARD_MEANINGS = {
   "Knight of Cups": { up: "Romance, charm, following the heart", rev: "Moodiness, unrealistic expectations, jealousy" },
   "Queen of Cups": { up: "Compassion, emotional depth, intuitive healer", rev: "Martyrdom, co-dependence, emotional overwhelm" },
   "King of Cups": { up: "Emotional maturity, calm authority, diplomacy", rev: "Emotional manipulation, coldness, volatility" },
+  // Swords
   "Ace of Swords": { up: "Clarity, breakthrough, new idea, truth", rev: "Confusion, misinformation, mental fog" },
   "Two of Swords": { up: "Difficult decision, avoidance, stalemate", rev: "Indecision broken, seeing the truth, overwhelm" },
   "Three of Swords": { up: "Heartbreak, grief, sorrow, painful truth", rev: "Healing, forgiveness, releasing pain" },
@@ -194,6 +198,7 @@ const CARD_MEANINGS = {
   "Knight of Swords": { up: "Ambition, fast action, determination", rev: "Recklessness, impatience, burnout" },
   "Queen of Swords": { up: "Clear boundaries, independence, sharp perception", rev: "Coldness, bitterness, overly critical" },
   "King of Swords": { up: "Intellectual authority, truth, clear judgement", rev: "Manipulation, cruelty, abuse of power" },
+  // Pentacles
   "Ace of Pentacles": { up: "New opportunity, prosperity, potential", rev: "Missed chance, poor planning, scarcity mindset" },
   "Two of Pentacles": { up: "Balance, adaptability, juggling priorities", rev: "Overwhelm, imbalance, dropping the ball" },
   "Three of Pentacles": { up: "Teamwork, collaboration, skill, craft", rev: "Lack of teamwork, poor quality, disharmony" },
@@ -261,14 +266,20 @@ function suitColor(card) {
 // ── Card of the Day ──────────────────────────────────────────
 function drawCardOfDay() {
   const today = toDateKey(new Date());
-  let hash = 0;
+  // Use a proper mixing function to avoid clustering
+  let h = 0x9e3779b9;
   for (let i = 0; i < today.length; i++) {
-    hash = ((hash << 5) - hash) + today.charCodeAt(i);
-    hash |= 0;
+    h = Math.imul(h ^ today.charCodeAt(i), 0x5bd1e995);
+    h ^= h >>> 15;
   }
-  const idx = Math.abs(hash) % ALL_CARDS.length;
-  const reversed = (Math.abs(hash >> 8) % 3) === 0;
-  return { card: ALL_CARDS[idx], reversed };
+  h = Math.imul(h ^ (h >>> 13), 0x5bd1e995);
+  h ^= h >>> 15;
+  const cardHash = Math.abs(h) % ALL_CARDS.length;
+  // Second round for reversal — independent from card selection
+  let h2 = Math.imul(h ^ 0xdeadbeef, 0x41c6ce57);
+  h2 ^= h2 >>> 15;
+  const reversed = (Math.abs(h2) % 3) === 0; // ~33% chance
+  return { card: ALL_CARDS[cardHash], reversed };
 }
 
 // ── Card autocomplete ────────────────────────────────────────
@@ -421,10 +432,15 @@ function TagInput({ tags, onChange }) {
 
 // ── Card of the Day Widget ───────────────────────────────────
 function CardOfDay({ readings, onQuickLog }) {
+  const [mode, setMode] = useState(null); // null | "digital" | "physical"
   const [revealed, setRevealed] = useState(false);
   const [animating, setAnimating] = useState(false);
   const [showMusings, setShowMusings] = useState(false);
   const [musings, setMusings] = useState("");
+  // Physical pull state
+  const [physicalCard, setPhysicalCard] = useState("");
+  const [physicalReversed, setPhysicalReversed] = useState(false);
+
   const todayDraw = drawCardOfDay();
   const todayKey = toDateKey(new Date());
   const alreadyLogged = readings.some(r => r.isCardOfDay && toDateKey(new Date(r.ts)) === todayKey);
@@ -435,11 +451,20 @@ function CardOfDay({ readings, onQuickLog }) {
     setTimeout(() => { setRevealed(true); setAnimating(false); }, 600);
   };
 
-  const handleLog = () => {
+  const handleLogDigital = () => {
     onQuickLog({ ...todayDraw, notes: musings.trim() });
-    setShowMusings(false);
-    setMusings("");
+    setShowMusings(false); setMusings("");
   };
+
+  const handleLogPhysical = () => {
+    if (!physicalCard || !ALL_CARDS.includes(physicalCard)) return;
+    onQuickLog({ card: physicalCard, reversed: physicalReversed, notes: musings.trim() });
+    setShowMusings(false); setMusings(""); setPhysicalCard(""); setPhysicalReversed(false);
+  };
+
+  const physicalMeaning = physicalCard && ALL_CARDS.includes(physicalCard)
+    ? getCardMeaning(physicalCard, physicalReversed) : null;
+  const physicalValid = physicalCard && ALL_CARDS.includes(physicalCard);
 
   return (
     <div className="cotd-container">
@@ -447,60 +472,99 @@ function CardOfDay({ readings, onQuickLog }) {
         <span className="cotd-label">Card of the Day</span>
         <span className="cotd-date">{formatDate(Date.now())}</span>
       </div>
-      {!revealed ? (
-        <div className={`cotd-card-back ${animating ? "flipping" : ""}`} onClick={reveal}>
-          <div className="cotd-back-design">
-            <div className="cotd-back-inner">
-              <span className="cotd-back-symbol">✶</span>
-              <span className="cotd-back-text">turn the card</span>
-            </div>
-          </div>
+
+      {alreadyLogged ? (
+        <div style={{ textAlign: "center", padding: "0.5rem 0" }}>
+          <span className="cotd-logged">✓ today's card is logged</span>
         </div>
-      ) : (
-        <div className="cotd-revealed">
-          <div className="cotd-card-face" style={{ "--suit-color": suitColor(todayDraw.card) }}>
-            <span className="cotd-suit" style={{ color: suitColor(todayDraw.card) }}>{suitSymbol(todayDraw.card)}</span>
-            <span className="cotd-card-name">{todayDraw.card}</span>
-            {todayDraw.reversed && <span className="reversed-tag">reversed</span>}
-          </div>
-          <p className="card-meaning-text">{getCardMeaning(todayDraw.card, todayDraw.reversed)}</p>
-          {!alreadyLogged ? (
-            <>
+      ) : !mode ? (
+        /* ── Choose mode ── */
+        <div className="cotd-mode-picker">
+          <button className="cotd-mode-btn" onClick={() => setMode("digital")}>
+            <span className="cotd-mode-icon">✶</span>
+            <span className="cotd-mode-label">Draw from the grimoire</span>
+            <span className="cotd-mode-sub">let the app choose</span>
+          </button>
+          <button className="cotd-mode-btn" onClick={() => setMode("physical")}>
+            <span className="cotd-mode-icon">🂠</span>
+            <span className="cotd-mode-label">Log a physical pull</span>
+            <span className="cotd-mode-sub">I pulled from my deck</span>
+          </button>
+        </div>
+      ) : mode === "digital" ? (
+        /* ── Digital draw ── */
+        <>
+          {!revealed ? (
+            <div className={`cotd-card-back ${animating ? "flipping" : ""}`} onClick={reveal}>
+              <div className="cotd-back-design">
+                <div className="cotd-back-inner">
+                  <span className="cotd-back-symbol">✶</span>
+                  <span className="cotd-back-text">turn the card</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="cotd-revealed">
+              <div className="cotd-card-face" style={{ "--suit-color": suitColor(todayDraw.card) }}>
+                <span className="cotd-suit" style={{ color: suitColor(todayDraw.card) }}>{suitSymbol(todayDraw.card)}</span>
+                <span className="cotd-card-name">{todayDraw.card}</span>
+                {todayDraw.reversed && <span className="reversed-tag">reversed</span>}
+              </div>
+              <p className="card-meaning-text">{getCardMeaning(todayDraw.card, todayDraw.reversed)}</p>
               {!showMusings ? (
                 <button className="cotd-log-btn" onClick={() => setShowMusings(true)}>+ Log to journal</button>
               ) : (
                 <div className="cotd-musings" style={{ marginTop: "1rem", width: "100%", maxWidth: "380px", marginLeft: "auto", marginRight: "auto", animation: "fadeIn 0.3s ease" }}>
-                  <textarea
-                    className="n-textarea"
-                    rows={3}
-                    placeholder="What does this card stir in you today?..."
-                    value={musings}
-                    onChange={e => setMusings(e.target.value)}
-                    style={{ fontSize: "0.82rem", textAlign: "left" }}
-                    autoFocus
-                  />
+                  <textarea className="n-textarea" rows={3} placeholder="What does this card stir in you today?..." value={musings} onChange={e => setMusings(e.target.value)} style={{ fontSize: "0.82rem", textAlign: "left" }} autoFocus />
                   <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", justifyContent: "center" }}>
-                    <button className="save-btn" style={{ fontSize: "0.5rem", padding: "0.35rem 1rem" }} onClick={handleLog}>
-                      Record
-                    </button>
-                    <button className="cancel-btn" style={{ fontSize: "0.5rem", padding: "0.35rem 0.7rem" }} onClick={() => { setShowMusings(false); setMusings(""); }}>
-                      Skip & log
-                    </button>
+                    <button className="save-btn" style={{ fontSize: "0.5rem", padding: "0.35rem 1rem" }} onClick={handleLogDigital}>Record</button>
+                    <button className="cancel-btn" style={{ fontSize: "0.5rem", padding: "0.35rem 0.7rem" }} onClick={() => { setShowMusings(false); setMusings(""); }}>Skip & log</button>
                   </div>
                 </div>
               )}
-            </>
-          ) : (
-            <span className="cotd-logged">✓ logged</span>
+            </div>
           )}
+          <button className="cotd-switch-mode" onClick={() => { setMode(null); setRevealed(false); setShowMusings(false); setMusings(""); }}>← choose differently</button>
+        </>
+      ) : (
+        /* ── Physical pull ── */
+        <div className="cotd-physical">
+          <div className="form-section" style={{ marginBottom: "0.8rem" }}>
+            <span className="form-label">What did you pull?</span>
+            <CardInput
+              value={physicalCard}
+              reversed={physicalReversed}
+              onChange={setPhysicalCard}
+              onReversedChange={setPhysicalReversed}
+              placeholder="Type the card you drew..."
+            />
+          </div>
+
+          {physicalMeaning && (
+            <div className="inline-meaning" style={{ marginBottom: "0.8rem", animation: "fadeIn 0.2s ease" }}>
+              <span className="inline-meaning-icon" style={{ color: suitColor(physicalCard) }}>{suitSymbol(physicalCard)}</span>
+              <span className="inline-meaning-text">{physicalMeaning}</span>
+            </div>
+          )}
+
+          <div className="form-section" style={{ marginBottom: "0.8rem" }}>
+            <span className="form-label">Musings</span>
+            <textarea className="n-textarea" rows={3} placeholder="What does this card stir in you today?..." value={musings} onChange={e => setMusings(e.target.value)} style={{ fontSize: "0.82rem" }} />
+          </div>
+
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            <button className="save-btn" style={{ fontSize: "0.5rem", padding: "0.35rem 1rem" }} onClick={handleLogPhysical} disabled={!physicalValid}>Record</button>
+            <button className="cotd-switch-mode" onClick={() => { setMode(null); setPhysicalCard(""); setPhysicalReversed(false); setMusings(""); }}>← choose differently</button>
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-// ── Card Timeline ────────────────────────────────────────────
+// ── Card Timeline (Cards Over Time) ──────────────────────────
 function CardTimeline({ readings }) {
+  // Group readings by month, show top cards per month
   const months = useMemo(() => {
     const map = {};
     readings.forEach(r => {
@@ -544,7 +608,11 @@ function CardTimeline({ readings }) {
                   <div
                     key={suit}
                     className="timeline-bar-segment"
-                    style={{ height: `${(count / totalSuits) * 100}%`, background: suitColors[suit], opacity: 0.6 }}
+                    style={{
+                      height: `${(count / totalSuits) * 100}%`,
+                      background: suitColors[suit],
+                      opacity: 0.6,
+                    }}
                     title={`${suit}: ${count}`}
                   />
                 ))}
@@ -568,6 +636,7 @@ function getCardPairs(readings) {
   const pairMap = {};
   readings.forEach(r => {
     const cardNames = r.cards.filter(c => c.card).map(c => c.card);
+    // Only count pairs in multi-card readings
     if (cardNames.length < 2) return;
     for (let i = 0; i < cardNames.length; i++) {
       for (let j = i + 1; j < cardNames.length; j++) {
@@ -602,6 +671,7 @@ function GrimoireCalendar({ journal, readings, onSelectDate, onSelectReading }) 
   const dayLabels = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
   const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+  // Monday-start: getDay() returns 0=Sun, so shift: (day + 6) % 7 gives 0=Mon
   const firstDayOfWeek = (new Date(calYear, calMonth, 1).getDay() + 6) % 7;
   const todayKey = toDateKey(new Date());
 
@@ -621,6 +691,7 @@ function GrimoireCalendar({ journal, readings, onSelectDate, onSelectReading }) 
     setSelectedDay(null);
   };
 
+  // Build lookup for this month
   const dayData = useMemo(() => {
     const data = {};
     for (let d = 1; d <= daysInMonth; d++) {
@@ -644,6 +715,7 @@ function GrimoireCalendar({ journal, readings, onSelectDate, onSelectReading }) 
 
   return (
     <div className="cal-container">
+      {/* Month nav */}
       <div className="cal-nav">
         <button className="daily-date-btn" onClick={prevMonth}>←</button>
         <span className="cal-month-label">{monthNames[calMonth]} {calYear}</span>
@@ -653,13 +725,18 @@ function GrimoireCalendar({ journal, readings, onSelectDate, onSelectReading }) 
         )}
       </div>
 
+      {/* Day headers */}
       <div className="cal-grid">
         {dayLabels.map(d => (
           <div key={d} className="cal-day-header">{d}</div>
         ))}
+
+        {/* Empty cells before first day */}
         {Array.from({ length: firstDayOfWeek }).map((_, i) => (
           <div key={`empty-${i}`} className="cal-cell empty" />
         ))}
+
+        {/* Days */}
         {Array.from({ length: daysInMonth }).map((_, i) => {
           const day = i + 1;
           const data = dayData[day];
@@ -672,7 +749,9 @@ function GrimoireCalendar({ journal, readings, onSelectDate, onSelectReading }) 
             <div
               key={day}
               className={`cal-cell ${data ? "has-entry" : ""} ${isToday ? "today" : ""} ${isSelected ? "selected" : ""} ${isFuture ? "future" : ""}`}
-              onClick={() => { if (!isFuture) setSelectedDay(isSelected ? null : day); }}
+              onClick={() => {
+                if (!isFuture) setSelectedDay(isSelected ? null : day);
+              }}
             >
               <span className="cal-day-num">{day}</span>
               {data && (
@@ -681,26 +760,36 @@ function GrimoireCalendar({ journal, readings, onSelectDate, onSelectReading }) 
                   {data.readings.length > 0 && <span className="cal-dot reading-dot" />}
                 </div>
               )}
-              {data?.mood && <span className="cal-mood-mini">{moods[data.mood] || ""}</span>}
+              {data?.mood && (
+                <span className="cal-mood-mini">{moods[data.mood] || ""}</span>
+              )}
             </div>
           );
         })}
       </div>
 
+      {/* Legend */}
       <div className="cal-legend">
         <span className="cal-legend-item"><span className="cal-dot journal-dot" /> journal</span>
         <span className="cal-legend-item"><span className="cal-dot reading-dot" /> reading</span>
       </div>
 
+      {/* Selected day detail */}
       {selectedDay && (
         <div className="cal-detail" style={{ animation: "fadeIn 0.25s ease" }}>
           <div className="cal-detail-header">
-            <span className="cal-detail-date">{formatDate(new Date(selectedKey + "T12:00:00"))}</span>
+            <span className="cal-detail-date">
+              {formatDate(new Date(selectedKey + "T12:00:00"))}
+            </span>
             <MoonBadge timestamp={new Date(selectedKey + "T12:00:00").getTime()} size="lg" />
           </div>
 
+          {/* Journal entry preview */}
           {selectedDayData?.hasJournal && (
-            <div className="cal-detail-section clickable" onClick={() => onSelectDate(selectedKey)}>
+            <div
+              className="cal-detail-section clickable"
+              onClick={() => onSelectDate(selectedKey)}
+            >
               <span className="cal-detail-label">
                 {selectedDayData.mood && <span style={{ marginRight: "0.3rem" }}>{moods[selectedDayData.mood]}</span>}
                 Journal Entry
@@ -715,17 +804,25 @@ function GrimoireCalendar({ journal, readings, onSelectDate, onSelectReading }) 
             </div>
           )}
 
+          {/* Readings on this day */}
           {selectedDayData?.readings.length > 0 && (
             <div>
               <span className="cal-detail-label" style={{ display: "block", marginBottom: "0.4rem", marginTop: selectedDayData?.hasJournal ? "0.6rem" : 0 }}>
                 {selectedDayData.readings.length} Reading{selectedDayData.readings.length > 1 ? "s" : ""}
               </span>
               {selectedDayData.readings.map(r => (
-                <div key={r.id} className="cal-detail-section clickable" style={{ marginBottom: "0.4rem" }} onClick={() => onSelectReading(r)}>
+                <div
+                  key={r.id}
+                  className="cal-detail-section clickable"
+                  style={{ marginBottom: "0.4rem" }}
+                  onClick={() => onSelectReading(r)}
+                >
                   <span className="reading-spread-badge" style={{ marginBottom: "0.2rem", display: "inline-block" }}>
                     {SPREADS[r.spread]?.label}
                   </span>
-                  {r.question && <p className="cal-detail-preview" style={{ fontStyle: "italic" }}>"{r.question}"</p>}
+                  {r.question && (
+                    <p className="cal-detail-preview" style={{ fontStyle: "italic" }}>"{r.question}"</p>
+                  )}
                   <div className="card-preview" style={{ marginTop: "0.2rem" }}>
                     {r.cards.filter(c => c.card).map((c, ci) => (
                       <span key={ci} className="card-chip" style={{ color: suitColor(c.card), fontSize: "0.7rem" }}>
@@ -739,8 +836,12 @@ function GrimoireCalendar({ journal, readings, onSelectDate, onSelectReading }) 
             </div>
           )}
 
+          {/* Nothing on this day */}
           {!selectedDayData && (
-            <div className="cal-detail-section clickable" onClick={() => onSelectDate(selectedKey)}>
+            <div
+              className="cal-detail-section clickable"
+              onClick={() => onSelectDate(selectedKey)}
+            >
               <p className="cal-detail-preview" style={{ color: "#3a4a3a" }}>nothing recorded this day</p>
               <span className="cal-detail-link">start a journal entry →</span>
             </div>
@@ -751,7 +852,7 @@ function GrimoireCalendar({ journal, readings, onSelectDate, onSelectReading }) 
   );
 }
 
-// ── Library: Search ──────────────────────────────────────────
+// ── Library: Search Component ────────────────────────────────
 function LibrarySearch({ readings, getCardHistory }) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(null);
@@ -760,7 +861,11 @@ function LibrarySearch({ readings, getCardHistory }) {
     ? ALL_CARDS.filter(c => c.toLowerCase().includes(query.toLowerCase())).slice(0, 8)
     : [];
 
-  const selectCard = (card) => { setSelected(card); setQuery(card); };
+  const selectCard = (card) => {
+    setSelected(card);
+    setQuery(card);
+  };
+
   const count = selected ? getCardHistory(selected) : 0;
 
   return (
@@ -884,7 +989,7 @@ function LibraryBrowse({ readings, getCardHistory }) {
 // ══════════════════════════════════════════════════════════════
 //  MAIN COMPONENT
 // ══════════════════════════════════════════════════════════════
-export default function App() {
+export default function TarotJournal() {
   const [readings, setReadings] = useState([]);
   const [journal, setJournal] = useState({});
   const [loaded, setLoaded] = useState(false);
@@ -892,8 +997,9 @@ export default function App() {
   const [selectedReading, setSelectedReading] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterTag, setFilterTag] = useState(null);
-  const [statsTab, setStatsTab] = useState("overview");
+  const [statsTab, setStatsTab] = useState("overview"); // overview | pairs | timeline | moons
 
+  // New reading form state
   const [spread, setSpread] = useState("single");
   const [question, setQuestion] = useState("");
   const [cards, setCards] = useState({});
@@ -901,12 +1007,14 @@ export default function App() {
   const [notes, setNotes] = useState("");
   const [tags, setTags] = useState([]);
 
+  // Daily journal state
   const [dailyDate, setDailyDate] = useState(toDateKey(new Date()));
   const [dailyText, setDailyText] = useState("");
   const [dailyMood, setDailyMood] = useState(null);
   const [dailySaving, setDailySaving] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
 
+  // ── Storage ────────────────────────────────────────────────
   useEffect(() => {
     try {
       const stored = localStorage.getItem("grimoire-readings-v2");
@@ -954,6 +1062,7 @@ export default function App() {
     setTimeout(() => setDailySaving(false), 600);
   };
 
+  // ── New reading ────────────────────────────────────────────
   const startNew = () => {
     setSpread("single"); setQuestion(""); setCards({}); setReversals({}); setNotes(""); setTags([]);
     setView("new");
@@ -991,6 +1100,7 @@ export default function App() {
     if (selectedReading?.id === id) setView("journal");
   };
 
+  // ── Search & Filter ────────────────────────────────────────
   const filteredReadings = useMemo(() => {
     let result = readings;
     if (searchQuery.trim()) {
@@ -1006,6 +1116,7 @@ export default function App() {
     return result;
   }, [readings, searchQuery, filterTag]);
 
+  // ── Stats ──────────────────────────────────────────────────
   const cardFrequency = useMemo(() => {
     const freq = {};
     readings.forEach(r => r.cards.forEach(c => { if (c.card) freq[c.card] = (freq[c.card] || 0) + 1; }));
@@ -1070,6 +1181,7 @@ export default function App() {
     return Object.entries(dist).sort((a, b) => b[1] - a[1]);
   }, [journal]);
 
+  // ══════════════════════════════════════════════════════════
   return (
     <div className="grimoire-root">
       <style>{`
@@ -1078,62 +1190,177 @@ export default function App() {
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: #090c09; }
         ::-webkit-scrollbar-thumb { background: #1e2a1e; border-radius: 2px; }
-        .grimoire-root { min-height: 100vh; background: #090c09; color: #c8c4b0; font-family: 'IM Fell English', Georgia, serif; position: relative; }
-        .grimoire-root::before { content: ''; position: fixed; inset: 0; background: radial-gradient(ellipse at 20% 0%, rgba(138,170,138,0.03) 0%, transparent 60%), radial-gradient(ellipse at 80% 100%, rgba(184,168,208,0.02) 0%, transparent 60%); pointer-events: none; z-index: 0; }
-        .header { background: linear-gradient(180deg, #0d120d 0%, rgba(9,12,9,0.95) 100%); border-bottom: 1px solid #1e2a1e; padding: 1rem 1.5rem; position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: space-between; backdrop-filter: blur(12px); }
-        .app-title { font-family: 'Cinzel Decorative', 'Cinzel', serif; font-size: 0.95rem; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: #8aaa8a; margin: 0; text-shadow: 0 0 30px rgba(138,170,138,0.15); }
+
+        .grimoire-root {
+          min-height: 100vh; background: #090c09; color: #c8c4b0;
+          font-family: 'IM Fell English', Georgia, serif; position: relative;
+        }
+        .grimoire-root::before {
+          content: ''; position: fixed; inset: 0;
+          background:
+            radial-gradient(ellipse at 20% 0%, rgba(138,170,138,0.03) 0%, transparent 60%),
+            radial-gradient(ellipse at 80% 100%, rgba(184,168,208,0.02) 0%, transparent 60%);
+          pointer-events: none; z-index: 0;
+        }
+
+        .header {
+          background: linear-gradient(180deg, #0d120d 0%, rgba(9,12,9,0.95) 100%);
+          border-bottom: 1px solid #1e2a1e; padding: 1rem 1.5rem;
+          position: sticky; top: 0; z-index: 20;
+          display: flex; align-items: center; justify-content: space-between;
+          backdrop-filter: blur(12px);
+        }
+        .app-title {
+          font-family: 'Cinzel Decorative', 'Cinzel', serif;
+          font-size: 0.95rem; font-weight: 700; letter-spacing: 0.2em;
+          text-transform: uppercase; color: #8aaa8a; margin: 0;
+          text-shadow: 0 0 30px rgba(138,170,138,0.15);
+        }
         .app-sub { font-family: 'IM Fell English', serif; font-style: italic; font-size: 0.72rem; color: #3a4a3a; margin: 0.15rem 0 0; }
+
         .nav { display: flex; gap: 0.15rem; }
-        .nav-btn { font-family: 'Cinzel', serif; font-size: 0.5rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; padding: 0.3rem 0.6rem; background: none; border: 1px solid transparent; color: #3a4a3a; cursor: pointer; transition: all 0.2s; }
+        .nav-btn {
+          font-family: 'Cinzel', serif; font-size: 0.5rem; font-weight: 600;
+          letter-spacing: 0.12em; text-transform: uppercase;
+          padding: 0.3rem 0.6rem; background: none; border: 1px solid transparent;
+          color: #3a4a3a; cursor: pointer; transition: all 0.2s;
+        }
         .nav-btn:hover { color: #6a8a6a; border-color: #2a3a2a; }
         .nav-btn.active { color: #8aaa8a; border-color: #3a5a3a; background: rgba(138,170,138,0.05); }
-        .new-btn { font-family: 'Cinzel', serif; font-size: 0.55rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #090c09; background: linear-gradient(135deg, #6a8a6a, #9ab89a); border: none; padding: 0.4rem 1rem; cursor: pointer; transition: all 0.2s; }
+
+        .new-btn {
+          font-family: 'Cinzel', serif; font-size: 0.55rem; font-weight: 700;
+          letter-spacing: 0.12em; text-transform: uppercase;
+          color: #090c09; background: linear-gradient(135deg, #6a8a6a, #9ab89a);
+          border: none; padding: 0.4rem 1rem; cursor: pointer; transition: all 0.2s;
+        }
         .new-btn:hover { filter: brightness(1.15); transform: translateY(-1px); }
+
         .page { padding: 1.2rem 1.5rem; max-width: 720px; margin: 0 auto; position: relative; z-index: 1; animation: fadeIn 0.3s ease; }
+
+        /* Home */
         .home-grid { display: flex; flex-direction: column; gap: 1.2rem; }
-        .home-moon { background: linear-gradient(135deg, #0d120d, #101810); border: 1px solid #1e2a1e; padding: 1.2rem 1.5rem; display: flex; align-items: center; gap: 1.2rem; }
+        .home-moon {
+          background: linear-gradient(135deg, #0d120d, #101810);
+          border: 1px solid #1e2a1e; padding: 1.2rem 1.5rem;
+          display: flex; align-items: center; gap: 1.2rem;
+        }
         .home-moon-symbol { font-size: 2rem; line-height: 1; }
         .home-moon-info { flex: 1; }
         .home-moon-name { font-family: 'Cinzel', serif; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; color: #b8a8d0; }
         .home-moon-desc { font-style: italic; font-size: 0.8rem; color: #5a6a5a; margin-top: 0.2rem; }
         .home-moon-date { font-family: 'Cinzel', serif; font-size: 0.5rem; letter-spacing: 0.1em; color: #3a4a3a; text-transform: uppercase; }
+
+        /* COTD */
         .cotd-container { background: linear-gradient(135deg, #0d120d, #0f1510); border: 1px solid #1e2a1e; padding: 1.2rem 1.5rem; }
         .cotd-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
         .cotd-label { font-family: 'Cinzel', serif; font-size: 0.6rem; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: #5a7a5a; }
         .cotd-date { font-family: 'Cinzel', serif; font-size: 0.5rem; letter-spacing: 0.1em; text-transform: uppercase; color: #3a4a3a; }
-        .cotd-card-back { width: 120px; height: 180px; margin: 0 auto; cursor: pointer; perspective: 600px; transition: transform 0.3s; }
+        .cotd-card-back {
+          width: 120px; height: 180px; margin: 0 auto;
+          cursor: pointer; perspective: 600px; transition: transform 0.3s;
+        }
         .cotd-card-back:hover { transform: scale(1.03); }
         .cotd-card-back.flipping { animation: cardFlip 0.6s ease; }
-        .cotd-back-design { width: 100%; height: 100%; background: linear-gradient(145deg, #141c14, #1a241a); border: 1px solid #2a3a2a; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
+        .cotd-back-design {
+          width: 100%; height: 100%;
+          background: linear-gradient(145deg, #141c14, #1a241a);
+          border: 1px solid #2a3a2a;
+          display: flex; align-items: center; justify-content: center;
+          position: relative; overflow: hidden;
+        }
         .cotd-back-design::before { content: ''; position: absolute; inset: 4px; border: 1px solid #2a3a2a; }
-        .cotd-back-design::after { content: ''; position: absolute; inset: 8px; border: 1px solid rgba(58,90,58,0.2); background: repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(58,90,58,0.03) 8px, rgba(58,90,58,0.03) 9px); }
+        .cotd-back-design::after {
+          content: ''; position: absolute; inset: 8px;
+          border: 1px solid rgba(58,90,58,0.2);
+          background: repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(58,90,58,0.03) 8px, rgba(58,90,58,0.03) 9px);
+        }
         .cotd-back-inner { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; z-index: 1; }
         .cotd-back-symbol { font-size: 1.5rem; color: #3a5a3a; }
         .cotd-back-text { font-family: 'Cinzel', serif; font-size: 0.4rem; letter-spacing: 0.2em; text-transform: uppercase; color: #2a3a2a; }
         .cotd-revealed { text-align: center; animation: fadeIn 0.4s ease; }
-        .cotd-card-face { padding: 1rem; display: inline-flex; flex-direction: column; align-items: center; gap: 0.3rem; border: 1px solid #1e2a1e; background: #0d120d; min-width: 160px; }
+        .cotd-card-face {
+          padding: 1rem; display: inline-flex; flex-direction: column;
+          align-items: center; gap: 0.3rem;
+          border: 1px solid #1e2a1e; background: #0d120d; min-width: 160px;
+        }
         .cotd-suit { font-size: 1.5rem; }
         .cotd-card-name { font-family: 'Cinzel', serif; font-size: 0.85rem; font-weight: 600; color: var(--suit-color); }
-        .cotd-log-btn { font-family: 'Cinzel', serif; font-size: 0.5rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #5a7a5a; background: none; border: 1px solid #2a3a2a; padding: 0.3rem 0.8rem; cursor: pointer; margin-top: 0.8rem; transition: all 0.2s; }
+        .cotd-log-btn {
+          font-family: 'Cinzel', serif; font-size: 0.5rem; font-weight: 600;
+          letter-spacing: 0.12em; text-transform: uppercase;
+          color: #5a7a5a; background: none; border: 1px solid #2a3a2a;
+          padding: 0.3rem 0.8rem; cursor: pointer; margin-top: 0.8rem; transition: all 0.2s;
+        }
         .cotd-log-btn:hover { color: #8aaa8a; border-color: #3a5a3a; }
         .cotd-logged { font-family: 'Cinzel', serif; font-size: 0.5rem; letter-spacing: 0.12em; text-transform: uppercase; color: #3a5a3a; display: block; margin-top: 0.8rem; }
-        @keyframes cardFlip { 0% { transform: scale(1) rotateY(0); } 50% { transform: scale(1.05) rotateY(90deg); } 100% { transform: scale(1) rotateY(180deg); opacity: 0; } }
+
+        .cotd-mode-picker { display: flex; gap: 0.6rem; justify-content: center; flex-wrap: wrap; }
+        .cotd-mode-btn {
+          display: flex; flex-direction: column; align-items: center; gap: 0.3rem;
+          padding: 1rem 1.2rem; background: #0d120d; border: 1px solid #1e2a1e;
+          cursor: pointer; transition: all 0.2s; min-width: 140px;
+          font-family: inherit; color: inherit;
+        }
+        .cotd-mode-btn:hover { background: #0f150f; border-color: #3a5a3a; transform: translateY(-1px); }
+        .cotd-mode-icon { font-size: 1.3rem; }
+        .cotd-mode-label {
+          font-family: 'Cinzel', serif; font-size: 0.5rem; font-weight: 600;
+          letter-spacing: 0.12em; text-transform: uppercase; color: #8aaa8a;
+        }
+        .cotd-mode-sub { font-size: 0.72rem; font-style: italic; color: #3a4a3a; }
+
+        .cotd-switch-mode {
+          font-family: 'Cinzel', serif; font-size: 0.42rem; letter-spacing: 0.1em;
+          text-transform: uppercase; color: #3a4a3a; background: none; border: none;
+          cursor: pointer; padding: 0; margin-top: 0.8rem; transition: color 0.2s;
+        }
+        .cotd-switch-mode:hover { color: #5a7a5a; }
+
+        .cotd-physical { animation: fadeIn 0.3s ease; }
+
+        @keyframes cardFlip {
+          0% { transform: scale(1) rotateY(0); }
+          50% { transform: scale(1.05) rotateY(90deg); }
+          100% { transform: scale(1) rotateY(180deg); opacity: 0; }
+        }
+
         .home-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
-        .home-tile { background: #0d120d; border: 1px solid #1a221a; padding: 1rem; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; gap: 0.3rem; }
+        .home-tile {
+          background: #0d120d; border: 1px solid #1a221a;
+          padding: 1rem; cursor: pointer; transition: all 0.2s;
+          display: flex; flex-direction: column; gap: 0.3rem;
+        }
         .home-tile:hover { background: #0f150f; border-color: #2a3a2a; transform: translateY(-1px); }
         .home-tile-icon { font-size: 1.2rem; }
         .home-tile-label { font-family: 'Cinzel', serif; font-size: 0.55rem; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; color: #6a8a6a; }
         .home-tile-sub { font-size: 0.75rem; color: #3a4a3a; font-style: italic; }
+
+        /* Search */
         .search-bar { display: flex; gap: 0.5rem; margin-bottom: 1rem; align-items: center; }
-        .search-input { flex: 1; background: #0d120d; border: 1px solid #1e2a1e; color: #c8c4b0; font-family: 'IM Fell English', serif; font-size: 0.85rem; padding: 0.45rem 0.7rem; outline: none; transition: border-color 0.2s; }
+        .search-input {
+          flex: 1; background: #0d120d; border: 1px solid #1e2a1e;
+          color: #c8c4b0; font-family: 'IM Fell English', serif;
+          font-size: 0.85rem; padding: 0.45rem 0.7rem; outline: none; transition: border-color 0.2s;
+        }
         .search-input:focus { border-color: #3a5a3a; }
         .search-input::placeholder { color: #2a3a2a; }
+
         .filter-tags { display: flex; gap: 0.3rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
-        .filter-tag { font-family: 'Cinzel', serif; font-size: 0.45rem; letter-spacing: 0.1em; text-transform: uppercase; padding: 0.2rem 0.5rem; border: 1px solid #1e2a1e; color: #3a4a3a; cursor: pointer; transition: all 0.2s; background: none; }
+        .filter-tag {
+          font-family: 'Cinzel', serif; font-size: 0.45rem; letter-spacing: 0.1em;
+          text-transform: uppercase; padding: 0.2rem 0.5rem;
+          border: 1px solid #1e2a1e; color: #3a4a3a; cursor: pointer;
+          transition: all 0.2s; background: none;
+        }
         .filter-tag:hover { color: #5a7a5a; border-color: #2a3a2a; }
         .filter-tag.active { color: #8aaa8a; border-color: #3a5a3a; background: rgba(138,170,138,0.06); }
+
         .reading-list { display: flex; flex-direction: column; gap: 0.5rem; }
-        .reading-card { background: #0d120d; border: 1px solid #1a221a; border-left: 2px solid #3a5a3a; padding: 0.9rem 1rem; cursor: pointer; transition: all 0.2s; animation: fadeIn 0.2s ease; }
+        .reading-card {
+          background: #0d120d; border: 1px solid #1a221a; border-left: 2px solid #3a5a3a;
+          padding: 0.9rem 1rem; cursor: pointer; transition: all 0.2s; animation: fadeIn 0.2s ease;
+        }
         .reading-card:hover { background: #0f150f; border-left-color: #6a8a6a; }
         .reading-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; }
         .reading-date { font-family: 'Cinzel', serif; font-size: 0.5rem; letter-spacing: 0.1em; text-transform: uppercase; color: #3a4a3a; margin: 0 0 0.3rem; display: flex; align-items: center; gap: 0.4rem; }
@@ -1147,12 +1374,20 @@ export default function App() {
         .reading-tag-pill { font-family: 'Cinzel', serif; font-size: 0.4rem; letter-spacing: 0.08em; text-transform: uppercase; color: #5a6a5a; border: 1px solid #1e2a1e; padding: 0.08rem 0.3rem; background: rgba(138,170,138,0.03); }
         .delete-btn { background: none; border: none; color: #2a3a2a; cursor: pointer; font-size: 0.75rem; padding: 0.1rem 0.3rem; transition: color 0.2s; flex-shrink: 0; }
         .delete-btn:hover { color: #8a4a4a; }
+
+        /* Detail */
         .detail-back { font-family: 'Cinzel', serif; font-size: 0.5rem; letter-spacing: 0.12em; text-transform: uppercase; color: #5a7a5a; background: none; border: none; cursor: pointer; padding: 0; margin-bottom: 1.2rem; display: flex; align-items: center; gap: 0.3rem; }
         .detail-back:hover { color: #8aaa8a; }
         .detail-question { font-size: 1.05rem; font-style: italic; color: #d8d4c0; line-height: 1.5; margin: 0 0 0.3rem; }
         .detail-meta { font-family: 'Cinzel', serif; font-size: 0.5rem; letter-spacing: 0.1em; text-transform: uppercase; color: #3a4a3a; margin: 0 0 0.4rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+
         .cards-layout { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.5rem; }
-        .card-row { display: flex; align-items: flex-start; gap: 0.8rem; padding: 0.6rem 0.8rem; background: #0d120d; border: 1px solid #1a221a; border-left: 2px solid var(--suit-color); position: relative; }
+        .card-row {
+          display: flex; align-items: flex-start; gap: 0.8rem;
+          padding: 0.6rem 0.8rem; background: #0d120d;
+          border: 1px solid #1a221a; border-left: 2px solid var(--suit-color);
+          position: relative;
+        }
         .card-position { font-family: 'Cinzel', serif; font-size: 0.48rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #3a4a3a; min-width: 85px; margin-top: 0.15rem; flex-shrink: 0; }
         .card-name { font-size: 0.9rem; color: var(--suit-color); flex: 1; }
         .card-name.reversed { font-style: italic; opacity: 0.75; }
@@ -1161,13 +1396,35 @@ export default function App() {
         .suit-sym { font-size: 0.85rem; flex-shrink: 0; }
         .card-whisper { font-size: 0.68rem; color: #3a4a3a; font-style: italic; position: absolute; right: 0.8rem; bottom: 0.25rem; }
         .card-whisper-inline { font-size: 0.68rem; color: #3a4a3a; font-style: italic; flex-shrink: 0; }
-        .card-meaning-text { font-size: 0.8rem; font-style: italic; color: #7a8a6a; margin-top: 0.7rem; line-height: 1.5; max-width: 320px; margin-left: auto; margin-right: auto; }
-        .card-row-with-meaning { background: #0d120d; border: 1px solid #1a221a; border-left: 2px solid var(--suit-color); padding: 0.6rem 0.8rem; position: relative; }
-        .card-row-main { display: flex; align-items: flex-start; gap: 0.8rem; }
-        .card-meaning-row { font-size: 0.75rem; font-style: italic; color: #5a6a5a; margin-top: 0.3rem; padding-left: 1.65rem; line-height: 1.4; }
+
+        .card-meaning-text {
+          font-size: 0.8rem; font-style: italic; color: #7a8a6a;
+          margin-top: 0.7rem; line-height: 1.5; max-width: 320px;
+          margin-left: auto; margin-right: auto;
+        }
+
+        .card-row-with-meaning {
+          background: #0d120d; border: 1px solid #1a221a;
+          border-left: 2px solid var(--suit-color);
+          padding: 0.6rem 0.8rem; position: relative;
+        }
+        .card-row-main {
+          display: flex; align-items: flex-start; gap: 0.8rem;
+        }
+        .card-meaning-row {
+          font-size: 0.75rem; font-style: italic; color: #5a6a5a;
+          margin-top: 0.3rem; padding-left: 1.65rem; line-height: 1.4;
+        }
+
+        /* Celtic Cross */
         .celtic-cross-container { margin-bottom: 1.5rem; overflow-x: auto; }
         .celtic-cross-grid { display: flex; gap: 1.5rem; min-width: 500px; align-items: flex-start; }
-        .cross-section { display: grid; grid-template-areas: ".      crown   ." "past   center  future" ".      found   ."; grid-template-columns: 1fr 1fr 1fr; grid-template-rows: auto auto auto; gap: 0.4rem; flex: 1; }
+        .cross-section {
+          display: grid;
+          grid-template-areas: ".      crown   ." "past   center  future" ".      found   .";
+          grid-template-columns: 1fr 1fr 1fr; grid-template-rows: auto auto auto;
+          gap: 0.4rem; flex: 1;
+        }
         .cross-pos { display: flex; justify-content: center; align-items: center; min-height: 70px; }
         .cross-pos.crown { grid-area: crown; }
         .cross-pos.past { grid-area: past; }
@@ -1176,29 +1433,50 @@ export default function App() {
         .cross-pos.foundation { grid-area: found; }
         .cross-challenge-overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(90deg); opacity: 0.85; z-index: 2; }
         .staff-section { display: flex; flex-direction: column; gap: 0.4rem; min-width: 140px; }
-        .cross-card-spatial { background: #0d120d; border: 1px solid #1a221a; border-left: 2px solid var(--suit-color); padding: 0.4rem 0.6rem; width: 100%; display: flex; flex-direction: column; gap: 0.1rem; }
+        .cross-card-spatial {
+          background: #0d120d; border: 1px solid #1a221a;
+          border-left: 2px solid var(--suit-color);
+          padding: 0.4rem 0.6rem; width: 100%;
+          display: flex; flex-direction: column; gap: 0.1rem;
+        }
         .cross-position-label { font-family: 'Cinzel', serif; font-size: 0.38rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #3a4a3a; }
         .cross-suit-sym { font-size: 0.7rem; }
         .cross-card-name { font-size: 0.78rem; color: var(--suit-color); }
         .cross-card-name.reversed { font-style: italic; opacity: 0.75; }
         .cross-whisper { font-size: 0.55rem; color: #3a4a3a; font-style: italic; }
         .cross-meaning { font-size: 0.55rem; color: #5a6a5a; font-style: italic; line-height: 1.4; margin-top: 0.1rem; }
+
         .notes-section { margin-top: 1rem; }
         .notes-label { font-family: 'Cinzel', serif; font-size: 0.5rem; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; color: #5a7a5a; margin: 0 0 0.4rem; }
         .notes-text { font-size: 0.88rem; color: #9a9a88; line-height: 1.7; white-space: pre-wrap; font-style: italic; }
+
+        /* Form */
         .form-section { margin-bottom: 1.2rem; }
         .form-label { font-family: 'Cinzel', serif; font-size: 0.5rem; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; color: #5a7a5a; margin: 0 0 0.4rem; display: block; }
         .spread-tabs { display: flex; gap: 0; border: 1px solid #1e2a1e; width: fit-content; margin-bottom: 1rem; }
-        .spread-tab { font-family: 'Cinzel', serif; font-size: 0.55rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; padding: 0.35rem 0.8rem; cursor: pointer; border-right: 1px solid #1e2a1e; color: #3a4a3a; background: transparent; transition: all 0.2s; }
+        .spread-tab {
+          font-family: 'Cinzel', serif; font-size: 0.55rem; font-weight: 600;
+          letter-spacing: 0.1em; text-transform: uppercase;
+          padding: 0.35rem 0.8rem; cursor: pointer;
+          border-right: 1px solid #1e2a1e; color: #3a4a3a;
+          background: transparent; transition: all 0.2s;
+        }
         .spread-tab:last-child { border-right: none; }
         .spread-tab.active { color: #8aaa8a; background: rgba(138,170,138,0.06); }
         .spread-tab:hover:not(.active) { color: #5a7a5a; }
+
         .q-input { width: 100%; background: #0d120d; border: 1px solid #1e2a1e; color: #d8d4c0; font-family: 'IM Fell English', serif; font-style: italic; font-size: 0.95rem; padding: 0.5rem 0.7rem; outline: none; transition: border-color 0.2s; }
         .q-input:focus { border-color: #3a5a3a; }
         .q-input::placeholder { color: #2a3a2a; }
+
         .positions-list { display: flex; flex-direction: column; gap: 0.6rem; }
         .position-row { display: flex; flex-direction: column; gap: 0.2rem; }
-        .inline-meaning { display: flex; align-items: flex-start; gap: 0.35rem; padding: 0.35rem 0.5rem; margin-top: 0.1rem; background: rgba(138,170,138,0.03); border-left: 2px solid #2a3a2a; }
+        .inline-meaning {
+          display: flex; align-items: flex-start; gap: 0.35rem;
+          padding: 0.35rem 0.5rem; margin-top: 0.1rem;
+          background: rgba(138,170,138,0.03);
+          border-left: 2px solid #2a3a2a;
+        }
         .inline-meaning-icon { font-size: 0.65rem; flex-shrink: 0; margin-top: 0.05rem; }
         .inline-meaning-text { font-size: 0.73rem; font-style: italic; color: #6a7a5a; line-height: 1.4; }
         .position-label { font-family: 'Cinzel', serif; font-size: 0.45rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #4a6a4a; }
@@ -1210,20 +1488,25 @@ export default function App() {
         .card-option:hover { background: rgba(138,170,138,0.06); color: #c8c4b0; }
         .rev-toggle { font-family: 'Cinzel', serif; font-size: 0.45rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 0.3rem 0.45rem; border: 1px solid #1e2a1e; color: #3a4a3a; cursor: pointer; white-space: nowrap; transition: all 0.2s; background: #0d120d; }
         .rev-toggle.active { color: #8a6a6a; border-color: #4a2a2a; background: rgba(138,106,106,0.08); }
+
         .n-textarea { width: 100%; background: #0d120d; border: 1px solid #1e2a1e; color: #c8c4b0; font-family: 'IM Fell English', serif; font-size: 0.88rem; padding: 0.5rem 0.7rem; outline: none; resize: vertical; line-height: 1.6; transition: border-color 0.2s; }
         .n-textarea:focus { border-color: #3a5a3a; }
         .n-textarea::placeholder { color: #2a3a2a; }
+
         .tag-input-wrap { display: flex; flex-direction: column; gap: 0.4rem; }
         .tags-display { display: flex; gap: 0.3rem; flex-wrap: wrap; }
         .tag-pill { font-family: 'Cinzel', serif; font-size: 0.45rem; letter-spacing: 0.1em; text-transform: uppercase; color: #8aaa8a; border: 1px solid #3a5a3a; padding: 0.15rem 0.5rem; background: rgba(138,170,138,0.06); display: inline-flex; align-items: center; gap: 0.3rem; }
         .tag-remove { cursor: pointer; color: #5a7a5a; font-size: 0.65rem; }
         .tag-remove:hover { color: #8a4a4a; }
+
         .form-actions { display: flex; gap: 0.6rem; margin-top: 1.2rem; }
         .save-btn { font-family: 'Cinzel', serif; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: #090c09; background: linear-gradient(135deg, #6a8a6a, #9ab89a); border: none; padding: 0.45rem 1.3rem; cursor: pointer; }
         .save-btn:disabled { opacity: 0.3; cursor: default; }
         .save-btn:not(:disabled):hover { filter: brightness(1.12); }
         .cancel-btn { font-family: 'Cinzel', serif; font-size: 0.6rem; letter-spacing: 0.12em; text-transform: uppercase; color: #3a4a3a; background: none; border: 1px solid #1e2a1e; padding: 0.45rem 1rem; cursor: pointer; transition: all 0.2s; }
         .cancel-btn:hover { border-color: #3a5a3a; color: #5a7a5a; }
+
+        /* Daily Journal */
         .daily-moon-block { display: flex; align-items: center; gap: 0.8rem; background: linear-gradient(135deg, #0d120d, #101810); border: 1px solid #1e2a1e; padding: 0.8rem 1rem; margin-bottom: 1.2rem; }
         .daily-moon-sym { font-size: 1.5rem; }
         .daily-moon-text { font-family: 'Cinzel', serif; font-size: 0.55rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #b8a8d0; }
@@ -1234,6 +1517,7 @@ export default function App() {
         .daily-date-display { font-family: 'Cinzel', serif; font-size: 0.6rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #8aaa8a; min-width: 140px; text-align: center; }
         .daily-today-btn { font-family: 'Cinzel', serif; font-size: 0.4rem; letter-spacing: 0.1em; text-transform: uppercase; background: none; border: 1px solid #1e2a1e; color: #3a4a3a; padding: 0.15rem 0.4rem; cursor: pointer; transition: all 0.2s; }
         .daily-today-btn:hover { color: #5a7a5a; border-color: #2a3a2a; }
+
         .mood-picker { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 1rem; }
         .mood-btn { display: flex; flex-direction: column; align-items: center; gap: 0.15rem; padding: 0.4rem 0.5rem; border: 1px solid #1e2a1e; background: none; cursor: pointer; transition: all 0.2s; min-width: 50px; }
         .mood-btn:hover { border-color: #2a3a2a; background: rgba(138,170,138,0.03); }
@@ -1241,25 +1525,51 @@ export default function App() {
         .mood-emoji { font-size: 1rem; }
         .mood-label { font-family: 'Cinzel', serif; font-size: 0.35rem; letter-spacing: 0.08em; text-transform: uppercase; color: #3a4a3a; }
         .mood-btn.active .mood-label { color: #8aaa8a; }
+
         .daily-textarea { width: 100%; background: #0d120d; border: 1px solid #1e2a1e; color: #c8c4b0; font-family: 'IM Fell English', serif; font-size: 0.9rem; padding: 0.8rem; outline: none; resize: vertical; line-height: 1.8; transition: border-color 0.2s; min-height: 200px; }
         .daily-textarea:focus { border-color: #3a5a3a; }
         .daily-textarea::placeholder { color: #2a3a2a; }
+
         .daily-save-row { display: flex; align-items: center; gap: 0.8rem; margin-top: 0.8rem; }
         .daily-save-btn { font-family: 'Cinzel', serif; font-size: 0.55rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #090c09; background: linear-gradient(135deg, #6a8a6a, #9ab89a); border: none; padding: 0.4rem 1rem; cursor: pointer; }
         .daily-save-btn:hover { filter: brightness(1.12); }
         .daily-saved { font-family: 'Cinzel', serif; font-size: 0.45rem; letter-spacing: 0.1em; text-transform: uppercase; color: #3a5a3a; animation: fadeIn 0.3s ease; }
-        .prompt-nudge { font-family: 'Cinzel', serif; font-size: 0.45rem; letter-spacing: 0.1em; text-transform: uppercase; color: #3a4a3a; background: none; border: 1px dashed #1e2a1e; padding: 0.3rem 0.7rem; cursor: pointer; transition: all 0.2s; margin-bottom: 0.8rem; }
+
+        /* Reflection prompt */
+        .prompt-nudge {
+          font-family: 'Cinzel', serif; font-size: 0.45rem; letter-spacing: 0.1em;
+          text-transform: uppercase; color: #3a4a3a; background: none;
+          border: 1px dashed #1e2a1e; padding: 0.3rem 0.7rem;
+          cursor: pointer; transition: all 0.2s; margin-bottom: 0.8rem;
+        }
         .prompt-nudge:hover { color: #5a7a5a; border-color: #3a5a3a; }
-        .prompt-text { font-style: italic; font-size: 0.88rem; color: #7a8a6a; padding: 0.7rem 1rem; margin-bottom: 1rem; border-left: 2px solid #3a5a3a; background: rgba(138,170,138,0.03); animation: fadeIn 0.4s ease; line-height: 1.6; }
+        .prompt-text {
+          font-style: italic; font-size: 0.88rem; color: #7a8a6a;
+          padding: 0.7rem 1rem; margin-bottom: 1rem;
+          border-left: 2px solid #3a5a3a;
+          background: rgba(138,170,138,0.03);
+          animation: fadeIn 0.4s ease;
+          line-height: 1.6;
+        }
+
+        /* Stats */
         .stats-tabs { display: flex; gap: 0; border: 1px solid #1e2a1e; width: fit-content; margin-bottom: 1.2rem; }
-        .stats-tab { font-family: 'Cinzel', serif; font-size: 0.5rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; padding: 0.35rem 0.7rem; cursor: pointer; border-right: 1px solid #1e2a1e; color: #3a4a3a; background: transparent; transition: all 0.2s; }
+        .stats-tab {
+          font-family: 'Cinzel', serif; font-size: 0.5rem; font-weight: 600;
+          letter-spacing: 0.1em; text-transform: uppercase;
+          padding: 0.35rem 0.7rem; cursor: pointer;
+          border-right: 1px solid #1e2a1e; color: #3a4a3a;
+          background: transparent; transition: all 0.2s;
+        }
         .stats-tab:last-child { border-right: none; }
         .stats-tab.active { color: #8aaa8a; background: rgba(138,170,138,0.06); }
         .stats-tab:hover:not(.active) { color: #5a7a5a; }
+
         .stats-summary { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.6rem; margin-bottom: 1.5rem; }
         .stat-box { background: #0d120d; border: 1px solid #1a221a; padding: 0.7rem 0.8rem; }
         .stat-box-label { font-family: 'Cinzel', serif; font-size: 0.45rem; letter-spacing: 0.12em; text-transform: uppercase; color: #3a4a3a; margin: 0 0 0.2rem; }
         .stat-box-value { font-family: 'Cinzel', serif; font-size: 1.3rem; color: #8aaa8a; margin: 0; }
+
         .stats-grid { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.8rem; }
         .stat-row { display: flex; align-items: center; gap: 0.6rem; }
         .stat-card { font-size: 0.82rem; color: var(--suit-color); min-width: 150px; }
@@ -1267,42 +1577,81 @@ export default function App() {
         .stat-bar { height: 3px; border-radius: 2px; background: var(--suit-color); opacity: 0.6; transition: width 0.5s ease; }
         .stat-count { font-family: 'Cinzel', serif; font-size: 0.5rem; color: #3a4a3a; min-width: 20px; text-align: right; }
         .stat-label { font-family: 'Cinzel', serif; font-size: 0.5rem; letter-spacing: 0.1em; text-transform: uppercase; color: #3a4a3a; margin-bottom: 0.5rem; }
+
         .suit-dist { display: flex; gap: 0.5rem; margin-top: 0.8rem; flex-wrap: wrap; }
         .suit-dist-item { background: #0d120d; border: 1px solid #1a221a; padding: 0.5rem 0.7rem; display: flex; flex-direction: column; align-items: center; gap: 0.2rem; min-width: 60px; }
         .suit-dist-sym { font-size: 1rem; }
         .suit-dist-count { font-family: 'Cinzel', serif; font-size: 0.9rem; color: #8aaa8a; }
         .suit-dist-name { font-family: 'Cinzel', serif; font-size: 0.38rem; letter-spacing: 0.08em; text-transform: uppercase; color: #3a4a3a; }
+
+        /* Card pairs */
         .pair-list { display: flex; flex-direction: column; gap: 0.5rem; }
-        .pair-row { background: #0d120d; border: 1px solid #1a221a; padding: 0.6rem 0.8rem; display: flex; align-items: center; gap: 0.6rem; animation: fadeIn 0.2s ease; }
+        .pair-row {
+          background: #0d120d; border: 1px solid #1a221a;
+          padding: 0.6rem 0.8rem; display: flex; align-items: center;
+          gap: 0.6rem; animation: fadeIn 0.2s ease;
+        }
         .pair-cards { flex: 1; font-size: 0.85rem; color: #c8c4b0; }
         .pair-arrow { color: #3a5a3a; font-size: 0.75rem; margin: 0 0.2rem; }
         .pair-count { font-family: 'Cinzel', serif; font-size: 0.5rem; letter-spacing: 0.1em; color: #5a7a5a; min-width: 40px; text-align: right; }
         .pair-empty { font-style: italic; color: #2a3a2a; font-size: 0.85rem; padding: 1.5rem 0; text-align: center; }
+
+        /* Timeline */
         .timeline-container { margin: 1rem 0; overflow-x: auto; }
         .timeline-scroll { display: flex; gap: 0.3rem; align-items: flex-end; min-height: 180px; padding-bottom: 0.5rem; }
-        .timeline-month { display: flex; flex-direction: column; align-items: center; gap: 0.2rem; min-width: 55px; flex-shrink: 0; }
+        .timeline-month {
+          display: flex; flex-direction: column; align-items: center;
+          gap: 0.2rem; min-width: 55px; flex-shrink: 0;
+        }
         .timeline-month-label { font-family: 'Cinzel', serif; font-size: 0.38rem; letter-spacing: 0.08em; text-transform: uppercase; color: #3a4a3a; order: 3; }
-        .timeline-bar-stack { width: 28px; display: flex; flex-direction: column; border-radius: 2px; overflow: hidden; order: 1; border: 1px solid #1a221a; }
+        .timeline-bar-stack {
+          width: 28px; display: flex; flex-direction: column;
+          border-radius: 2px; overflow: hidden; order: 1;
+          border: 1px solid #1a221a;
+        }
         .timeline-bar-segment { width: 100%; transition: height 0.4s ease; }
         .timeline-count { font-family: 'Cinzel', serif; font-size: 0.45rem; color: #5a7a5a; order: 2; }
         .timeline-top { font-size: 0.55rem; white-space: nowrap; order: 4; max-width: 80px; overflow: hidden; text-overflow: ellipsis; }
+
+        /* Moon distribution */
         .moon-dist-list { display: flex; flex-direction: column; gap: 0.3rem; }
         .moon-dist-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.3rem 0; }
         .moon-dist-phase { font-size: 0.85rem; min-width: 130px; color: #b8a8d0; display: flex; align-items: center; gap: 0.4rem; }
         .moon-dist-phase-name { font-size: 0.78rem; }
         .moon-dist-bar-wrap { flex: 1; background: #1a221a; height: 3px; border-radius: 2px; }
         .moon-dist-bar { height: 3px; border-radius: 2px; background: #b8a8d0; opacity: 0.5; transition: width 0.5s ease; }
+
+        /* Mood distribution in stats */
         .mood-dist { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }
         .mood-dist-item { display: flex; flex-direction: column; align-items: center; gap: 0.15rem; background: #0d120d; border: 1px solid #1a221a; padding: 0.4rem 0.6rem; min-width: 50px; }
         .mood-dist-emoji { font-size: 1rem; }
         .mood-dist-count { font-family: 'Cinzel', serif; font-size: 0.8rem; color: #8aaa8a; }
         .mood-dist-label { font-family: 'Cinzel', serif; font-size: 0.35rem; letter-spacing: 0.08em; text-transform: uppercase; color: #3a4a3a; }
+
+        /* Calendar */
         .cal-container { }
         .cal-nav { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.2rem; }
-        .cal-month-label { font-family: 'Cinzel', serif; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; color: #8aaa8a; min-width: 160px; text-align: center; }
-        .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-bottom: 0.8rem; }
-        .cal-day-header { font-family: 'Cinzel', serif; font-size: 0.38rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #3a4a3a; text-align: center; padding: 0.3rem 0; }
-        .cal-cell { aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.15rem; background: #0d120d; border: 1px solid #141c14; cursor: pointer; transition: all 0.15s; position: relative; min-height: 40px; }
+        .cal-month-label {
+          font-family: 'Cinzel', serif; font-size: 0.7rem; font-weight: 600;
+          letter-spacing: 0.15em; text-transform: uppercase; color: #8aaa8a;
+          min-width: 160px; text-align: center;
+        }
+        .cal-grid {
+          display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px;
+          margin-bottom: 0.8rem;
+        }
+        .cal-day-header {
+          font-family: 'Cinzel', serif; font-size: 0.38rem; font-weight: 600;
+          letter-spacing: 0.1em; text-transform: uppercase; color: #3a4a3a;
+          text-align: center; padding: 0.3rem 0;
+        }
+        .cal-cell {
+          aspect-ratio: 1; display: flex; flex-direction: column;
+          align-items: center; justify-content: center; gap: 0.15rem;
+          background: #0d120d; border: 1px solid #141c14;
+          cursor: pointer; transition: all 0.15s; position: relative;
+          min-height: 40px;
+        }
         .cal-cell.empty { background: transparent; border-color: transparent; cursor: default; }
         .cal-cell.future { opacity: 0.3; cursor: default; }
         .cal-cell:not(.empty):not(.future):hover { background: #0f150f; border-color: #2a3a2a; }
@@ -1310,56 +1659,145 @@ export default function App() {
         .cal-cell.today .cal-day-num { color: #8aaa8a; }
         .cal-cell.selected { background: #0f150f; border-color: #5a8a5a; box-shadow: 0 0 8px rgba(138,170,138,0.1); }
         .cal-cell.has-entry { background: #0e140e; }
-        .cal-day-num { font-family: 'Cinzel', serif; font-size: 0.55rem; font-weight: 600; color: #5a6a5a; }
+
+        .cal-day-num {
+          font-family: 'Cinzel', serif; font-size: 0.55rem; font-weight: 600; color: #5a6a5a;
+        }
         .cal-dots { display: flex; gap: 3px; }
-        .cal-dot { width: 4px; height: 4px; border-radius: 50%; display: inline-block; }
+        .cal-dot {
+          width: 4px; height: 4px; border-radius: 50%; display: inline-block;
+        }
         .cal-dot.journal-dot { background: #7a9cc4; }
         .cal-dot.reading-dot { background: #c9a84c; }
         .cal-mood-mini { font-size: 0.5rem; line-height: 1; position: absolute; bottom: 2px; right: 3px; }
-        .cal-legend { display: flex; gap: 1rem; justify-content: center; margin-bottom: 1.2rem; }
-        .cal-legend-item { font-family: 'Cinzel', serif; font-size: 0.4rem; letter-spacing: 0.1em; text-transform: uppercase; color: #3a4a3a; display: flex; align-items: center; gap: 0.3rem; }
-        .cal-detail { background: #0d120d; border: 1px solid #1e2a1e; padding: 1rem; }
-        .cal-detail-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.8rem; }
-        .cal-detail-date { font-family: 'Cinzel', serif; font-size: 0.55rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #8aaa8a; }
-        .cal-detail-label { font-family: 'Cinzel', serif; font-size: 0.48rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #5a7a5a; }
-        .cal-detail-section { padding: 0.6rem 0.8rem; background: rgba(138,170,138,0.02); border: 1px solid #1a221a; transition: all 0.15s; }
+
+        .cal-legend {
+          display: flex; gap: 1rem; justify-content: center; margin-bottom: 1.2rem;
+        }
+        .cal-legend-item {
+          font-family: 'Cinzel', serif; font-size: 0.4rem; letter-spacing: 0.1em;
+          text-transform: uppercase; color: #3a4a3a;
+          display: flex; align-items: center; gap: 0.3rem;
+        }
+
+        .cal-detail {
+          background: #0d120d; border: 1px solid #1e2a1e; padding: 1rem;
+        }
+        .cal-detail-header {
+          display: flex; align-items: center; justify-content: space-between;
+          margin-bottom: 0.8rem;
+        }
+        .cal-detail-date {
+          font-family: 'Cinzel', serif; font-size: 0.55rem; font-weight: 600;
+          letter-spacing: 0.12em; text-transform: uppercase; color: #8aaa8a;
+        }
+        .cal-detail-label {
+          font-family: 'Cinzel', serif; font-size: 0.48rem; font-weight: 600;
+          letter-spacing: 0.12em; text-transform: uppercase; color: #5a7a5a;
+        }
+        .cal-detail-section {
+          padding: 0.6rem 0.8rem; background: rgba(138,170,138,0.02);
+          border: 1px solid #1a221a; transition: all 0.15s;
+        }
         .cal-detail-section.clickable { cursor: pointer; }
         .cal-detail-section.clickable:hover { background: rgba(138,170,138,0.05); border-color: #2a3a2a; }
-        .cal-detail-preview { font-size: 0.8rem; color: #9a9a88; line-height: 1.5; margin: 0.3rem 0 0.2rem; font-style: normal; }
-        .cal-detail-link { font-family: 'Cinzel', serif; font-size: 0.42rem; letter-spacing: 0.1em; text-transform: uppercase; color: #5a7a5a; display: block; margin-top: 0.3rem; }
-        .library-card-detail { margin-top: 1.2rem; background: #0d120d; border: 1px solid #1a221a; padding: 1.2rem; }
-        .library-card-header { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1rem; }
-        .library-card-name { font-family: 'Cinzel', serif; font-size: 1rem; font-weight: 600; display: block; }
-        .library-card-count { font-size: 0.7rem; color: #3a4a3a; font-style: italic; display: block; margin-top: 0.1rem; }
+        .cal-detail-preview {
+          font-size: 0.8rem; color: #9a9a88; line-height: 1.5;
+          margin: 0.3rem 0 0.2rem; font-style: normal;
+        }
+        .cal-detail-link {
+          font-family: 'Cinzel', serif; font-size: 0.42rem; letter-spacing: 0.1em;
+          text-transform: uppercase; color: #5a7a5a; display: block; margin-top: 0.3rem;
+        }
+
+        /* Library */
+        .library-card-detail {
+          margin-top: 1.2rem; background: #0d120d; border: 1px solid #1a221a; padding: 1.2rem;
+        }
+        .library-card-header {
+          display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1rem;
+        }
+        .library-card-name {
+          font-family: 'Cinzel', serif; font-size: 1rem; font-weight: 600; display: block;
+        }
+        .library-card-count {
+          font-size: 0.7rem; color: #3a4a3a; font-style: italic; display: block; margin-top: 0.1rem;
+        }
         .library-meanings { display: flex; flex-direction: column; gap: 0.8rem; }
-        .library-meaning-block { padding: 0.7rem 0.9rem; border-left: 2px solid #3a5a3a; background: rgba(138,170,138,0.03); }
-        .library-meaning-block.reversed { border-left-color: #5a3a3a; background: rgba(138,106,106,0.03); }
-        .library-meaning-label { font-family: 'Cinzel', serif; font-size: 0.45rem; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; color: #5a7a5a; display: block; margin-bottom: 0.3rem; }
+        .library-meaning-block {
+          padding: 0.7rem 0.9rem;
+          border-left: 2px solid #3a5a3a;
+          background: rgba(138,170,138,0.03);
+        }
+        .library-meaning-block.reversed {
+          border-left-color: #5a3a3a;
+          background: rgba(138,106,106,0.03);
+        }
+        .library-meaning-label {
+          font-family: 'Cinzel', serif; font-size: 0.45rem; font-weight: 600;
+          letter-spacing: 0.15em; text-transform: uppercase; color: #5a7a5a;
+          display: block; margin-bottom: 0.3rem;
+        }
         .library-meaning-block.reversed .library-meaning-label { color: #7a5a5a; }
-        .library-meaning-text { font-size: 0.88rem; font-style: italic; color: #9a9a88; line-height: 1.5; margin: 0; }
+        .library-meaning-text {
+          font-size: 0.88rem; font-style: italic; color: #9a9a88; line-height: 1.5; margin: 0;
+        }
+
         .library-suits { display: flex; flex-direction: column; gap: 0.3rem; }
         .library-suit-group { }
-        .library-suit-header { width: 100%; display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 0.8rem; background: #0d120d; border: 1px solid #1a221a; cursor: pointer; transition: all 0.2s; font-family: inherit; color: inherit; }
+        .library-suit-header {
+          width: 100%; display: flex; align-items: center; gap: 0.6rem;
+          padding: 0.6rem 0.8rem; background: #0d120d; border: 1px solid #1a221a;
+          cursor: pointer; transition: all 0.2s; font-family: inherit;
+          color: inherit;
+        }
         .library-suit-header:hover { background: #0f150f; border-color: #2a3a2a; }
         .library-suit-header.open { border-color: #2a3a2a; background: #0f150f; }
-        .library-suit-name { font-family: 'Cinzel', serif; font-size: 0.6rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #8aaa8a; flex: 1; text-align: left; }
-        .library-suit-count { font-family: 'Cinzel', serif; font-size: 0.42rem; letter-spacing: 0.08em; text-transform: uppercase; color: #3a4a3a; }
-        .library-suit-arrow { font-size: 0.8rem; color: #3a4a3a; flex-shrink: 0; min-width: 1rem; text-align: center; }
+        .library-suit-name {
+          font-family: 'Cinzel', serif; font-size: 0.6rem; font-weight: 600;
+          letter-spacing: 0.12em; text-transform: uppercase; color: #8aaa8a; flex: 1; text-align: left;
+        }
+        .library-suit-count {
+          font-family: 'Cinzel', serif; font-size: 0.42rem; letter-spacing: 0.08em;
+          text-transform: uppercase; color: #3a4a3a;
+        }
+        .library-suit-arrow {
+          font-size: 0.8rem; color: #3a4a3a; flex-shrink: 0; min-width: 1rem; text-align: center;
+        }
+
         .library-suit-cards { padding-left: 0.5rem; border-left: 1px solid #1a221a; margin-left: 0.8rem; }
         .library-browse-card { }
-        .library-browse-btn { width: 100%; display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.6rem; background: none; border: none; border-bottom: 1px solid #121812; cursor: pointer; transition: all 0.15s; font-family: inherit; color: inherit; }
+        .library-browse-btn {
+          width: 100%; display: flex; align-items: center; gap: 0.5rem;
+          padding: 0.4rem 0.6rem; background: none; border: none; border-bottom: 1px solid #121812;
+          cursor: pointer; transition: all 0.15s; font-family: inherit; color: inherit;
+        }
         .library-browse-btn:hover { background: rgba(138,170,138,0.03); }
         .library-browse-name { font-size: 0.82rem; color: #c8c4b0; flex: 1; text-align: left; }
-        .library-browse-count { font-family: 'Cinzel', serif; font-size: 0.42rem; letter-spacing: 0.08em; color: #3a4a3a; }
+        .library-browse-count {
+          font-family: 'Cinzel', serif; font-size: 0.42rem; letter-spacing: 0.08em;
+          color: #3a4a3a;
+        }
         .library-browse-meanings { padding: 0.6rem 0.6rem 0.8rem; }
+
         .divider { border: none; border-top: 1px solid #1a221a; margin: 1rem 0; }
         .empty { text-align: center; padding: 3rem 2rem; font-style: italic; color: #2a3a2a; font-size: 0.9rem; line-height: 1.8; }
+
         .moon-badge { display: inline-flex; align-items: center; gap: 0.25rem; }
         .moon-sm .moon-symbol { font-size: 0.7rem; }
         .moon-lg .moon-symbol { font-size: 1rem; }
         .moon-lg .moon-name { font-family: 'Cinzel', serif; font-size: 0.5rem; letter-spacing: 0.08em; text-transform: uppercase; color: #b8a8d0; }
+
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
-        @media (max-width: 600px) { .header { flex-direction: column; gap: 0.6rem; align-items: flex-start; } .stats-summary { grid-template-columns: 1fr; } .home-tiles { grid-template-columns: 1fr; } .celtic-cross-grid { min-width: 400px; } .page { padding: 1rem; } .stats-tabs { flex-wrap: wrap; } }
+
+        @media (max-width: 600px) {
+          .header { flex-direction: column; gap: 0.6rem; align-items: flex-start; }
+          .stats-summary { grid-template-columns: 1fr; }
+          .home-tiles { grid-template-columns: 1fr; }
+          .celtic-cross-grid { min-width: 400px; }
+          .page { padding: 1rem; }
+          .stats-tabs { flex-wrap: wrap; }
+        }
       `}</style>
 
       {/* ════ Header ════ */}
@@ -1393,7 +1831,9 @@ export default function App() {
               </div>
               <span className="home-moon-date">{formatDate(Date.now())}</span>
             </div>
+
             <CardOfDay readings={readings} onQuickLog={logCardOfDay} />
+
             <div className="home-tiles">
               <div className="home-tile" onClick={startNew}>
                 <span className="home-tile-icon">✶</span>
@@ -1416,6 +1856,7 @@ export default function App() {
                 <span className="home-tile-sub">what keeps finding you</span>
               </div>
             </div>
+
             {readings.length > 0 && (
               <>
                 <p className="stat-label" style={{ marginTop: "0.5rem" }}>Recent</p>
@@ -1517,6 +1958,7 @@ export default function App() {
             </div>
           )}
           <hr className="divider" />
+
           {selectedReading.spread === "cross" ? (
             <CelticCrossLayout cards={selectedReading.cards} getCardHistory={getCardHistory} />
           ) : (
@@ -1541,6 +1983,7 @@ export default function App() {
               })}
             </div>
           )}
+
           {selectedReading.notes && (
             <div className="notes-section">
               <p className="notes-label">Reflections</p>
@@ -1634,6 +2077,7 @@ export default function App() {
               <button className="daily-today-btn" onClick={() => setDailyDate(toDateKey(new Date()))}>Today</button>
             )}
           </div>
+
           {(() => {
             const phase = getMoonPhase(new Date(dailyDate + "T12:00:00"));
             return (
@@ -1646,6 +2090,7 @@ export default function App() {
               </div>
             );
           })()}
+
           <div className="form-section">
             <span className="form-label">How are you feeling?</span>
             <div className="mood-picker">
@@ -1657,15 +2102,28 @@ export default function App() {
               ))}
             </div>
           </div>
+
+          {/* Reflection prompt nudge */}
           {!showPrompt ? (
-            <button className="prompt-nudge" onClick={() => setShowPrompt(true)}>✦ need a nudge?</button>
+            <button className="prompt-nudge" onClick={() => setShowPrompt(true)}>
+              ✦ need a nudge?
+            </button>
           ) : (
-            <div className="prompt-text">{getReflectionPrompts(getMoonPhase(new Date(dailyDate + "T12:00:00")).name)}</div>
+            <div className="prompt-text">
+              {getReflectionPrompts(getMoonPhase(new Date(dailyDate + "T12:00:00")).name)}
+            </div>
           )}
+
           <div className="form-section">
             <span className="form-label">Today's Page</span>
-            <textarea className="daily-textarea" placeholder="What's moving through you today? What do you want to remember?..." value={dailyText} onChange={e => setDailyText(e.target.value)} />
+            <textarea
+              className="daily-textarea"
+              placeholder="What's moving through you today? What do you want to remember?..."
+              value={dailyText}
+              onChange={e => setDailyText(e.target.value)}
+            />
           </div>
+
           {readings.filter(r => toDateKey(new Date(r.ts)) === dailyDate).length > 0 && (
             <div style={{ marginTop: "1rem" }}>
               <span className="form-label">Readings on this day</span>
@@ -1684,6 +2142,7 @@ export default function App() {
               ))}
             </div>
           )}
+
           <div className="daily-save-row">
             <button className="daily-save-btn" onClick={saveDailyEntry}>Save Entry</button>
             {dailySaving && <span className="daily-saved">✓ saved</span>}
@@ -1697,8 +2156,14 @@ export default function App() {
           <GrimoireCalendar
             journal={journal}
             readings={readings}
-            onSelectDate={(dateKey) => { setDailyDate(dateKey); setView("daily"); }}
-            onSelectReading={(r) => { setSelectedReading(r); setView("detail"); }}
+            onSelectDate={(dateKey) => {
+              setDailyDate(dateKey);
+              setView("daily");
+            }}
+            onSelectReading={(r) => {
+              setSelectedReading(r);
+              setView("detail");
+            }}
           />
         </div>
       )}
@@ -1713,6 +2178,8 @@ export default function App() {
             </p>
             <LibrarySearch readings={readings} getCardHistory={getCardHistory} />
           </div>
+
+          {/* Browse by suit */}
           <div className="form-section" style={{ marginTop: "1.5rem" }}>
             <span className="form-label">Browse by Suit</span>
             <LibraryBrowse readings={readings} getCardHistory={getCardHistory} />
@@ -1734,6 +2201,7 @@ export default function App() {
                 <div className={`stats-tab ${statsTab === "moons" ? "active" : ""}`} onClick={() => setStatsTab("moons")}>Moons & Moods</div>
               </div>
 
+              {/* ── Overview ── */}
               {statsTab === "overview" && (
                 <>
                   <div className="stats-summary">
@@ -1748,6 +2216,7 @@ export default function App() {
                       </div>
                     ))}
                   </div>
+
                   <p className="stat-label">Suit Distribution</p>
                   <div className="suit-dist">
                     {Object.entries(suitDistribution).map(([suit, count]) => {
@@ -1762,7 +2231,9 @@ export default function App() {
                       );
                     })}
                   </div>
+
                   <hr className="divider" />
+
                   <p className="stat-label">Cards that keep finding you</p>
                   <div className="stats-grid">
                     {cardFrequency.map(([card, count]) => {
@@ -1771,12 +2242,15 @@ export default function App() {
                         <div key={card} className="stat-row" style={{ "--suit-color": suitColor(card) }}>
                           <span className="suit-sym" style={{ color: suitColor(card), fontSize: "0.75rem", minWidth: "1rem" }}>{suitSymbol(card)}</span>
                           <span className="stat-card">{card}</span>
-                          <div className="stat-bar-wrap"><div className="stat-bar" style={{ width: `${(count / max) * 100}%` }} /></div>
+                          <div className="stat-bar-wrap">
+                            <div className="stat-bar" style={{ width: `${(count / max) * 100}%` }} />
+                          </div>
                           <span className="stat-count">{count}</span>
                         </div>
                       );
                     })}
                   </div>
+
                   {Object.keys(journal).length > 0 && (
                     <>
                       <hr className="divider" />
@@ -1789,12 +2263,18 @@ export default function App() {
                 </>
               )}
 
+              {/* ── Pairs ── */}
               {statsTab === "pairs" && (
                 <>
                   <p className="stat-label">Cards that keep finding each other</p>
-                  <p style={{ fontSize: "0.75rem", color: "#3a4a3a", fontStyle: "italic", marginBottom: "1rem" }}>Pairs that appeared together in 2 or more readings</p>
+                  <p style={{ fontSize: "0.75rem", color: "#3a4a3a", fontStyle: "italic", marginBottom: "1rem" }}>
+                    Pairs that appeared together in 2 or more readings
+                  </p>
                   {cardPairs.length === 0 ? (
-                    <div className="pair-empty">not enough multi-card readings yet to find pairs.<br /><span style={{ fontSize: "0.78rem" }}>keep pulling — the patterns will emerge.</span></div>
+                    <div className="pair-empty">
+                      not enough multi-card readings yet to find pairs.<br />
+                      <span style={{ fontSize: "0.78rem" }}>keep pulling — the patterns will emerge.</span>
+                    </div>
                   ) : (
                     <div className="pair-list">
                       {cardPairs.map(([pair, count]) => {
@@ -1815,12 +2295,17 @@ export default function App() {
                 </>
               )}
 
+              {/* ── Timeline ── */}
               {statsTab === "timeline" && (
                 <>
                   <p className="stat-label">Your readings over time</p>
-                  <p style={{ fontSize: "0.75rem", color: "#3a4a3a", fontStyle: "italic", marginBottom: "0.5rem" }}>Suit colors show what energy dominated each month.</p>
+                  <p style={{ fontSize: "0.75rem", color: "#3a4a3a", fontStyle: "italic", marginBottom: "0.5rem" }}>
+                    Suit colors show what energy dominated each month. Top card listed below.
+                  </p>
                   <CardTimeline readings={readings} />
+
                   <hr className="divider" />
+
                   <div className="suit-dist" style={{ marginTop: "0.5rem" }}>
                     {[
                       { suit: "Major", color: "#b8a8d0", sym: "✶" },
@@ -1838,30 +2323,37 @@ export default function App() {
                 </>
               )}
 
+              {/* ── Moons & Moods ── */}
               {statsTab === "moons" && (
                 <>
                   <p className="stat-label">When you read</p>
-                  <p style={{ fontSize: "0.75rem", color: "#3a4a3a", fontStyle: "italic", marginBottom: "1rem" }}>Which moon phases draw you to the cards</p>
+                  <p style={{ fontSize: "0.75rem", color: "#3a4a3a", fontStyle: "italic", marginBottom: "1rem" }}>
+                    Which moon phases draw you to the cards
+                  </p>
                   {moonDist.length > 0 && (
                     <div className="moon-dist-list">
                       {moonDist.map(([phase, count]) => {
                         const max = moonDist[0]?.[1] || 1;
-                        const phaseList = ["New Moon","Waxing Crescent","First Quarter","Waxing Gibbous","Full Moon","Waning Gibbous","Last Quarter","Waning Crescent"];
-                        const moonSyms = ["🌑","🌒","🌓","🌔","🌕","🌖","🌗","🌘"];
-                        const sym = moonSyms[phaseList.indexOf(phase)] || "🌑";
+                        const sym = getMoonPhase(new Date()).name === phase ? getMoonPhase(new Date()).symbol :
+                          ["🌑","🌒","🌓","🌔","🌕","🌖","🌗","🌘"][
+                            ["New Moon","Waxing Crescent","First Quarter","Waxing Gibbous","Full Moon","Waning Gibbous","Last Quarter","Waning Crescent"].indexOf(phase)
+                          ] || "🌑";
                         return (
                           <div key={phase} className="moon-dist-row">
                             <div className="moon-dist-phase">
                               <span>{sym}</span>
                               <span className="moon-dist-phase-name">{phase}</span>
                             </div>
-                            <div className="moon-dist-bar-wrap"><div className="moon-dist-bar" style={{ width: `${(count / max) * 100}%` }} /></div>
+                            <div className="moon-dist-bar-wrap">
+                              <div className="moon-dist-bar" style={{ width: `${(count / max) * 100}%` }} />
+                            </div>
                             <span className="stat-count">{count}</span>
                           </div>
                         );
                       })}
                     </div>
                   )}
+
                   {moodDistribution.length > 0 && (
                     <>
                       <hr className="divider" />
@@ -1880,6 +2372,7 @@ export default function App() {
                       </div>
                     </>
                   )}
+
                   {moodDistribution.length === 0 && moonDist.length === 0 && (
                     <div className="empty">track some moods in your daily journal to see patterns here.</div>
                   )}
