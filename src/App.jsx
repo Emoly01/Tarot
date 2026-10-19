@@ -1,4 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import "./grimoire.css";
+import { moonPhaseOfDay, moonAngle, litFraction, isWaxing, nextFullMoon, nextSabbat, seasonStart, dayOfYear,
+  numberWords, roman, longDate, ordinalDate, weekdayDate, dotDate, dotDayMonth, weekdayName, daysBetween } from "./herbarium/moon.js";
+import { herbFor } from "./herbarium/herbs.js";
+import { Fern, SuitPlate, CardBack, Tally, Wheel, MoonBig, MoonGlyph } from "./herbarium/art.jsx";
+import { themeStyle, initialTheme } from "./herbarium/theme.js";
 
 // ══════════════════════════════════════════════════════════════
 //  THE READING ROOM — A Digital Grimoire
@@ -7,30 +13,10 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 // ══════════════════════════════════════════════════════════════
 
 // ── Moon Phase Calculation ───────────────────────────────────
+const MOON_SYMBOLS = { "New Moon": "🌑", "Waxing Crescent": "🌒", "First Quarter": "🌓", "Waxing Gibbous": "🌔", "Full Moon": "🌕", "Waning Gibbous": "🌖", "Last Quarter": "🌗", "Waning Crescent": "🌘" };
 function getMoonPhase(date = new Date()) {
-  const year = date.getFullYear();
-  const month = date.getMonth() + 1;
-  const day = date.getDate();
-  let c = 0, e = 0, jd = 0, b = 0;
-  if (month < 3) { c = 365.25 * (year - 1); e = 30.6001 * (month + 13); }
-  else { c = 365.25 * year; e = 30.6001 * (month + 1); }
-  jd = c + e + day - 694039.09;
-  jd /= 29.5305882;
-  b = parseInt(jd);
-  jd -= b;
-  b = Math.round(jd * 8);
-  if (b >= 8) b = 0;
-  const phases = [
-    { name: "New Moon", symbol: "🌑" },
-    { name: "Waxing Crescent", symbol: "🌒" },
-    { name: "First Quarter", symbol: "🌓" },
-    { name: "Waxing Gibbous", symbol: "🌔" },
-    { name: "Full Moon", symbol: "🌕" },
-    { name: "Waning Gibbous", symbol: "🌖" },
-    { name: "Last Quarter", symbol: "🌗" },
-    { name: "Waning Crescent", symbol: "🌘" },
-  ];
-  return phases[b];
+  const name = moonPhaseOfDay(date);
+  return { name, symbol: MOON_SYMBOLS[name] };
 }
 
 function getMoonDescription(phase) {
@@ -254,13 +240,26 @@ function suitSymbol(card) {
   if (card.includes("Pentacles")) return "🜃";
   return "·";
 }
+function suitOf(card) {
+  if (MAJOR_ARCANA.includes(card)) return "Major";
+  if (card.includes("Wands")) return "Wands";
+  if (card.includes("Cups")) return "Cups";
+  if (card.includes("Swords")) return "Swords";
+  if (card.includes("Pentacles")) return "Pentacles";
+  return null;
+}
+const SUIT_COLORS = { Major: "var(--ox)", Wands: "var(--gilt)", Cups: "var(--verd)", Swords: "var(--ink)", Pentacles: "var(--moss)" };
 function suitColor(card) {
-  if (MAJOR_ARCANA.includes(card)) return "#b8a8d0";
-  if (card.includes("Wands")) return "#c9a84c";
-  if (card.includes("Cups")) return "#7a9cc4";
-  if (card.includes("Swords")) return "#a8c4b8";
-  if (card.includes("Pentacles")) return "#9ab87a";
-  return "#888";
+  return SUIT_COLORS[suitOf(card)] || "var(--soft)";
+}
+// Numeral for the top of a card face: Roman for the Major Arcana and pips, the rank for courts
+const PIP_RANKS = ["Ace", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten"];
+function cardNumeral(card) {
+  const major = MAJOR_ARCANA.indexOf(card);
+  if (major >= 0) return roman(major);
+  const rank = card.split(" of ")[0];
+  const pip = PIP_RANKS.indexOf(rank);
+  return pip >= 0 ? roman(pip + 1) : rank;
 }
 
 // ── Card of the Day ──────────────────────────────────────────
@@ -372,11 +371,12 @@ function CelticCrossLayout({ cards, getCardHistory }) {
 
 // ── Moon Phase Badge ─────────────────────────────────────────
 function MoonBadge({ timestamp, size = "sm" }) {
-  const phase = getMoonPhase(new Date(timestamp));
+  const date = new Date(timestamp);
+  const phase = getMoonPhase(date);
   const isSm = size === "sm";
   return (
     <span className={`moon-badge ${isSm ? "moon-sm" : "moon-lg"}`} title={phase.name}>
-      <span className="moon-symbol">{phase.symbol}</span>
+      <MoonGlyph angle={moonAngle(date)} title={phase.name} size={isSm ? 13 : 17} />
       {!isSm && <span className="moon-name">{phase.name}</span>}
     </span>
   );
@@ -420,7 +420,7 @@ function TagInput({ tags, onChange }) {
           <div className="card-dropdown">
             {suggestions.map(s => (
               <div key={s} className="card-option" onMouseDown={() => addTag(s)}>
-                <span style={{ color: "#5a7a5a", marginRight: "0.4rem", fontSize: "0.7rem" }}>◆</span>{s}
+                <span style={{ color: "var(--verd)", marginRight: "0.4rem", fontSize: "0.7rem" }}>◆</span>{s}
               </div>
             ))}
           </div>
@@ -430,135 +430,319 @@ function TagInput({ tags, onChange }) {
   );
 }
 
-// ── Card of the Day Widget ───────────────────────────────────
-function CardOfDay({ readings, onQuickLog }) {
-  const [mode, setMode] = useState(null); // null | "digital" | "physical"
-  const [revealed, setRevealed] = useState(false);
-  const [animating, setAnimating] = useState(false);
-  const [showMusings, setShowMusings] = useState(false);
-  const [musings, setMusings] = useState("");
-  // Physical pull state
-  const [physicalCard, setPhysicalCard] = useState("");
-  const [physicalReversed, setPhysicalReversed] = useState(false);
+// ── Home: the Herbarium folio ────────────────────────────────
+const REGISTER_SPREADS = { single: "Single draw", three: "Three-card", cross: "Celtic Cross" };
+const COLLECTOR = "E.";
 
-  const todayDraw = drawCardOfDay();
-  const todayKey = toDateKey(new Date());
-  const alreadyLogged = readings.some(r => r.isCardOfDay && toDateKey(new Date(r.ts)) === todayKey);
+const sentenceCase = s => s.charAt(0) + s.slice(1).toLowerCase();
+const lowerFirst = s => s.charAt(0).toLowerCase() + s.slice(1);
+// "the Star", "Strength", "the Six of Cups"
+function theCard(card, capital = false) {
+  const the = capital ? "The" : "the";
+  if (MAJOR_ARCANA.includes(card)) return card.startsWith("The ") ? the + card.slice(3) : card;
+  return `${the} ${card}`;
+}
+function underMoon(phase) {
+  if (phase === "New Moon" || phase === "Full Moon") return `under the ${phase.toLowerCase()}`;
+  if (phase.endsWith("Quarter")) return `under the ${phase.toLowerCase().replace(" ", "-")} moon`;
+  return `under a ${phase.toLowerCase()}${phase.endsWith("Gibbous") ? " moon" : ""}`;
+}
+const inNights = n => n === 0 ? "tonight" : n === 1 ? "tomorrow night" : `in ${numberWords(n)} nights`;
 
-  const reveal = () => {
-    if (revealed) return;
-    setAnimating(true);
-    setTimeout(() => { setRevealed(true); setAnimating(false); }, 600);
+function freshCotd(dateKey) {
+  const draw = drawCardOfDay();
+  return { date: dateKey, card: draw.card, reversed: draw.reversed, faceDown: true, revealed: false, physical: false, musing: "" };
+}
+function loadCotd(dateKey) {
+  try {
+    const saved = JSON.parse(localStorage.getItem("rr-cotd") || "null");
+    if (saved?.date === dateKey) return saved;
+  } catch {}
+  return freshCotd(dateKey);
+}
+
+function SectionLabel({ children, style }) {
+  return <div className="h-label" style={style}>{children}</div>;
+}
+
+function LabelRow({ label, children, script }) {
+  return (
+    <div className="spec-row">
+      <span className="spec-key">{label}</span>
+      <span className="spec-dots" />
+      <span className={script ? "spec-val script" : "spec-val"}>{children}</span>
+    </div>
+  );
+}
+
+function HerbariumHome({ readings, journal, cardPairs, onLog, onUpdateNotes, onTodayText, onOpenReading, onNavigate }) {
+  const now = new Date();
+  const todayKey = toDateKey(now);
+  const [stored, setStored] = useState(() => loadCotd(todayKey));
+  const [pulling, setPulling] = useState(false);
+  const [pullText, setPullText] = useState("");
+  const cotd = stored.date === todayKey ? stored : freshCotd(todayKey);
+  const setCotd = patch => setStored(prev => {
+    const next = { ...(prev.date === todayKey ? prev : freshCotd(todayKey)), ...patch };
+    try { localStorage.setItem("rr-cotd", JSON.stringify(next)); } catch {}
+    return next;
+  });
+
+  // Once today's card is in the register, the register is the source of truth
+  const logged = readings.find(r => r.isCardOfDay && toDateKey(new Date(r.ts)) === todayKey);
+  const card = logged ? logged.cards[0].card : cotd.card;
+  const reversed = logged ? logged.cards[0].reversed : cotd.reversed;
+  const revealed = cotd.revealed || !!logged;
+  const faceDown = logged && !cotd.revealed ? false : cotd.faceDown;
+  const musing = logged ? logged.notes || "" : cotd.musing;
+  const herb = herbFor(card);
+  const meanings = CARD_MEANINGS[card];
+  const numeral = cardNumeral(card);
+
+  const pullCard = (val) => {
+    setPullText(val);
+    if (ALL_CARDS.includes(val)) {
+      setCotd({ card: val, physical: true, faceDown: false, revealed: true });
+      setPulling(false); setPullText("");
+    }
   };
+  const record = () => onLog({ card, reversed, notes: musing.trim() });
 
-  const handleLogDigital = () => {
-    onQuickLog({ ...todayDraw, notes: musings.trim() });
-    setShowMusings(false); setMusings("");
-  };
+  // Last time this card turned up
+  const prior = readings.find(r => r !== logged && r.cards.some(c => c.card === card));
+  let lastVisit = `${theCard(card, true)} has not visited you before. A first meeting.`;
+  if (prior) {
+    const d = new Date(prior.ts), other = prior.cards.find(c => c.card && c.card !== card);
+    lastVisit = `${theCard(card, true)} last visited you on ${ordinalDate(d)}, ${underMoon(moonPhaseOfDay(d))}` +
+      (other ? `, beside ${theCard(other.card)}.` : ".");
+  }
 
-  const handleLogPhysical = () => {
-    if (!physicalCard || !ALL_CARDS.includes(physicalCard)) return;
-    onQuickLog({ card: physicalCard, reversed: physicalReversed, notes: musings.trim() });
-    setShowMusings(false); setMusings(""); setPhysicalCard(""); setPhysicalReversed(false);
-  };
+  // Sky
+  const angle = moonAngle(now), moonName = moonPhaseOfDay(now), moonPct = Math.round(litFraction(angle) * 100);
+  const fullMoon = nextFullMoon(now), fullIn = daysBetween(now, fullMoon.date);
+  const sabbat = nextSabbat(now);
+  const doy = dayOfYear(now);
 
-  const physicalMeaning = physicalCard && ALL_CARDS.includes(physicalCard)
-    ? getCardMeaning(physicalCard, physicalReversed) : null;
-  const physicalValid = physicalCard && ALL_CARDS.includes(physicalCard);
+  // Daily page: the most recent earlier entry, and today's
+  const prevKey = Object.keys(journal).filter(k => k < todayKey && journal[k].text?.trim()).sort().pop();
+  const prevDate = prevKey && new Date(prevKey + "T12:00:00");
+  const prevText = prevKey && journal[prevKey].text.trim();
+
+  // Patterns since the turn of the season
+  const season = seasonStart(now);
+  const seasonCards = readings.filter(r => r.ts >= season.date.getTime()).flatMap(r => r.cards.filter(c => c.card).map(c => c.card));
+  const suitRows = [["Major Arcana", "Major"], ["Cups", "Cups"], ["Wands", "Wands"], ["Swords", "Swords"], ["Pentacles", "Pentacles"]]
+    .map(([name, key]) => ({ name, n: seasonCards.filter(c => suitOf(c) === key).length, color: key === "Major" ? "var(--ox)" : "var(--ink)" }));
+  const topPair = cardPairs[0];
+  let pairNote = null;
+  if (topPair) {
+    const [c1, c2] = topPair[0].split(" ⟷ ");
+    const together = readings.filter(r => r.cards.some(c => c.card === c1) && r.cards.some(c => c.card === c2)).map(r => r.ts);
+    const weeks = Math.round((Math.max(...together) - Math.min(...together)) / (7 * 864e5));
+    const kw = c => lowerFirst(CARD_MEANINGS[c]?.up.split(",")[0] || c);
+    pairNote = { c1, c2, text: `${numberWords(topPair[1])} readings ${weeks > 1 ? `in ${numberWords(weeks)} weeks` : "within a week or two"}: ${kw(c1)} keeps arriving with ${kw(c2)}` };
+  }
 
   return (
-    <div className="cotd-container">
-      <div className="cotd-header">
-        <span className="cotd-label">Card of the Day</span>
-        <span className="cotd-date">{formatDate(Date.now())}</span>
-      </div>
-
-      {alreadyLogged ? (
-        <div style={{ textAlign: "center", padding: "0.5rem 0" }}>
-          <span className="cotd-logged">✓ today's card is logged</span>
-        </div>
-      ) : !mode ? (
-        /* ── Choose mode ── */
-        <div className="cotd-mode-picker">
-          <button className="cotd-mode-btn" onClick={() => setMode("digital")}>
-            <span className="cotd-mode-icon">✶</span>
-            <span className="cotd-mode-label">Draw from the grimoire</span>
-            <span className="cotd-mode-sub">let the app choose</span>
-          </button>
-          <button className="cotd-mode-btn" onClick={() => setMode("physical")}>
-            <span className="cotd-mode-icon">🂠</span>
-            <span className="cotd-mode-label">Log a physical pull</span>
-            <span className="cotd-mode-sub">I pulled from my deck</span>
-          </button>
-        </div>
-      ) : mode === "digital" ? (
-        /* ── Digital draw ── */
-        <>
-          {!revealed ? (
-            <div className={`cotd-card-back ${animating ? "flipping" : ""}`} onClick={reveal}>
-              <div className="cotd-back-design">
-                <div className="cotd-back-inner">
-                  <span className="cotd-back-symbol">✶</span>
-                  <span className="cotd-back-text">turn the card</span>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="cotd-revealed">
-              <div className="cotd-card-face" style={{ "--suit-color": suitColor(todayDraw.card) }}>
-                <span className="cotd-suit" style={{ color: suitColor(todayDraw.card) }}>{suitSymbol(todayDraw.card)}</span>
-                <span className="cotd-card-name">{todayDraw.card}</span>
-                {todayDraw.reversed && <span className="reversed-tag">reversed</span>}
-              </div>
-              <p className="card-meaning-text">{getCardMeaning(todayDraw.card, todayDraw.reversed)}</p>
-              {!showMusings ? (
-                <button className="cotd-log-btn" onClick={() => setShowMusings(true)}>+ Log to journal</button>
-              ) : (
-                <div className="cotd-musings" style={{ marginTop: "1rem", width: "100%", maxWidth: "380px", marginLeft: "auto", marginRight: "auto", animation: "fadeIn 0.3s ease" }}>
-                  <textarea className="n-textarea" rows={3} placeholder="What does this card stir in you today?..." value={musings} onChange={e => setMusings(e.target.value)} style={{ fontSize: "0.82rem", textAlign: "left" }} autoFocus />
-                  <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", justifyContent: "center" }}>
-                    <button className="save-btn" style={{ fontSize: "0.5rem", padding: "0.35rem 1rem" }} onClick={handleLogDigital}>Record</button>
-                    <button className="cancel-btn" style={{ fontSize: "0.5rem", padding: "0.35rem 0.7rem" }} onClick={() => { setShowMusings(false); setMusings(""); }}>Skip & log</button>
+    <>
+      <section className="h-hero">
+        {/* ── I · Specimen of the day ── */}
+        <div className="h-specimen-col" id="specimen">
+          <SectionLabel>I · Specimen of the day</SectionLabel>
+          <div className="h-mount">
+            <div className="h-tape h-tape-tl" />
+            <div className="h-tape h-tape-br" />
+            <button onClick={() => setCotd({ faceDown: !faceDown, revealed: true })} aria-label={faceDown ? "Turn the card over" : "Turn the card face down"} className="h-flip">
+              <div className="h-flip-inner" style={{ transform: `rotateY(${faceDown ? 180 : 0}deg) rotateZ(${reversed && !faceDown ? 180 : 0}deg)` }}>
+                <div className="h-face">
+                  <div className="h-face-frame">
+                    <div className="h-face-numeral">{numeral}</div>
+                    <div className="h-face-art"><SuitPlate suit={suitOf(card)} /></div>
+                    <div className="h-face-name">{card}</div>
+                    {herb && <div className="h-face-latin">{herb.latin}</div>}
                   </div>
                 </div>
+                <div className="h-back"><CardBack /></div>
+              </div>
+            </button>
+          </div>
+          <div className="h-caption">Touch the card to turn it {faceDown ? "over" : "face down"}</div>
+          {!logged && (pulling ? (
+            <div className="h-pull">
+              <CardInput value={pullText} reversed={reversed} onChange={pullCard} onReversedChange={v => setCotd({ reversed: v })} placeholder="the card you drew…" />
+              <button className="h-quiet-link" onClick={() => { setPulling(false); setPullText(""); }}>never mind</button>
+            </div>
+          ) : cotd.physical ? (
+            <button className="h-quiet-link" onClick={() => setCotd({ ...freshCotd(todayKey), faceDown: false, revealed: true, musing: cotd.musing })}>return to the grimoire's draw</button>
+          ) : (
+            <button className="h-quiet-link" onClick={() => setPulling(true)}>or enter a card from your own deck</button>
+          ))}
+        </div>
+
+        <div className="h-label-col">
+          <div className="h-label-mount">
+            <div className="h-label-card">
+              <div className="h-label-head">
+                <span className="h-label-herb">Herb. Reading Room</span>
+                <span className="h-label-no">No. {doy}</span>
+              </div>
+              {revealed ? (
+                <>
+                  <LabelRow label="Card">{MAJOR_ARCANA.includes(card) ? `${card}, ${numeral}` : card}</LabelRow>
+                  <LabelRow label="Position">{reversed ? "Reversed" : "Upright"}</LabelRow>
+                  {herb && <LabelRow label="Paired herb">{herb.common}, <i>{herb.latin}</i> {herb.authority}</LabelRow>}
+                </>
+              ) : (
+                <>
+                  <LabelRow label="Card"><i className="soft">not yet turned</i></LabelRow>
+                  <LabelRow label="Position"><i className="soft">face down</i></LabelRow>
+                  <LabelRow label="Paired herb"><i className="soft">under the card</i></LabelRow>
+                </>
               )}
+              <LabelRow label="Moon">{sentenceCase(moonName)}, {moonPct}% lit</LabelRow>
+              <LabelRow label="Leg." script>{COLLECTOR}</LabelRow>
+              <LabelRow label="Det." script>your own gut</LabelRow>
+              <div className="h-label-date">{dotDate(now)}</div>
             </div>
-          )}
-          <button className="cotd-switch-mode" onClick={() => { setMode(null); setRevealed(false); setShowMusings(false); setMusings(""); }}>← choose differently</button>
-        </>
-      ) : (
-        /* ── Physical pull ── */
-        <div className="cotd-physical">
-          <div className="form-section" style={{ marginBottom: "0.8rem" }}>
-            <span className="form-label">What did you pull?</span>
-            <CardInput
-              value={physicalCard}
-              reversed={physicalReversed}
-              onChange={setPhysicalCard}
-              onReversedChange={setPhysicalReversed}
-              placeholder="Type the card you drew..."
-            />
           </div>
 
-          {physicalMeaning && (
-            <div className="inline-meaning" style={{ marginBottom: "0.8rem", animation: "fadeIn 0.2s ease" }}>
-              <span className="inline-meaning-icon" style={{ color: suitColor(physicalCard) }}>{suitSymbol(physicalCard)}</span>
-              <span className="inline-meaning-text">{physicalMeaning}</span>
+          {revealed && meanings ? (
+            <div className="h-orient">
+              {[[false, "Upright", meanings.up], [true, "Reversed", meanings.rev]].map(([rev, label, text]) => (
+                <button key={label} onClick={() => !logged && setCotd({ reversed: rev })} disabled={!!logged}
+                  className={`h-orient-btn ${reversed === rev ? "on" : ""}`} aria-pressed={reversed === rev}>
+                  <div className="h-orient-label">{label}</div>
+                  <div className="h-orient-text">{lowerFirst(text)}</div>
+                </button>
+              ))}
             </div>
+          ) : (
+            <p className="h-note">The meanings wait under the card. Turn it when you're ready.</p>
           )}
 
-          <div className="form-section" style={{ marginBottom: "0.8rem" }}>
-            <span className="form-label">Musings</span>
-            <textarea className="n-textarea" rows={3} placeholder="What does this card stir in you today?..." value={musings} onChange={e => setMusings(e.target.value)} style={{ fontSize: "0.82rem" }} />
-          </div>
+          {revealed && <p className="h-note">{lastVisit}</p>}
 
-          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-            <button className="save-btn" style={{ fontSize: "0.5rem", padding: "0.35rem 1rem" }} onClick={handleLogPhysical} disabled={!physicalValid}>Record</button>
-            <button className="cotd-switch-mode" onClick={() => { setMode(null); setPhysicalCard(""); setPhysicalReversed(false); setMusings(""); }}>← choose differently</button>
+          <label className="h-lined-label">
+            <SectionLabel>Musing</SectionLabel>
+            <textarea className="h-lined" rows={3} value={musing} placeholder={`what ${revealed ? theCard(card) : "the card"} stirred in you…`}
+              onChange={e => logged ? onUpdateNotes(logged.id, e.target.value) : setCotd({ musing: e.target.value })} />
+          </label>
+          {revealed && (logged ? (
+            <div className="h-entered">
+              Entered in the register at {new Date(logged.ts).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}.{" "}
+              <button className="h-link" onClick={() => onOpenReading(logged)}>see the entry →</button>
+            </div>
+          ) : (
+            <button className="h-record" onClick={record}>Enter in the register</button>
+          ))}
+        </div>
+      </section>
+
+      {/* ── The sky ── */}
+      <section className="h-sky">
+        <div className="h-sky-cell" style={{ flex: "1 1 280px", gap: 20 }}>
+          <div style={{ width: 84, flex: "none" }}><MoonBig angle={angle} /></div>
+          <div>
+            <div className="h-label sm">Tonight's moon</div>
+            <div className="h-sky-big">{sentenceCase(moonName)}</div>
+            <div className="h-sky-sub">{moonPct}% lit, {isWaxing(angle) ? "waxing" : "waning"}</div>
           </div>
         </div>
-      )}
-    </div>
+        <div className="h-sky-cell" style={{ flex: "1 1 220px", flexDirection: "column", alignItems: "flex-start", justifyContent: "center" }}>
+          <div className="h-label sm">Next full moon</div>
+          <div className="h-sky-big">{fullMoon.name}</div>
+          <div className="h-sky-sub">{weekdayName(fullMoon.date)}, {dotDayMonth(fullMoon.date)} · {inNights(fullIn)}</div>
+        </div>
+        <div className="h-sky-cell" style={{ flex: "1 1 340px", gap: 18, paddingTop: 16, paddingBottom: 16 }}>
+          <div style={{ width: 156, flex: "none" }}><Wheel today={now} next={sabbat} /></div>
+          <div>
+            <div className="h-label sm">Wheel of the year</div>
+            <div className="h-sky-big">{sabbat.days === 0 ? `${sabbat.name} is today` : sabbat.days === 1 ? `${sabbat.name} tomorrow` : `${sabbat.name} in ${sabbat.days} days`}</div>
+            <div className="h-sky-sub">{weekdayName(sabbat.date)}, {dotDayMonth(sabbat.date)}</div>
+          </div>
+        </div>
+      </section>
+
+      <section className="h-pair">
+        {/* ── II · The Daily Page ── */}
+        <div className="h-col">
+          <SectionLabel>II · The Daily Page</SectionLabel>
+          {prevKey ? (
+            <>
+              <div className="h-entry-head">
+                <MoonGlyph angle={moonAngle(prevDate)} size={18} title={moonPhaseOfDay(prevDate)} />
+                <span>{weekdayDate(prevDate, now)} · {moonPhaseOfDay(prevDate).toLowerCase()}</span>
+              </div>
+              <p className="h-entry"><span className="h-dropcap">{prevText.charAt(0)}</span>{prevText.slice(1)}</p>
+            </>
+          ) : (
+            <p className="h-note">No earlier pages yet. Today's will be the first.</p>
+          )}
+          <label className="h-lined-label" style={{ marginTop: 10 }}>
+            <SectionLabel>Today, {dotDayMonth(now)}</SectionLabel>
+            <textarea className="h-lined" rows={4} style={{ minHeight: 144 }} placeholder="begin anywhere…"
+              value={journal[todayKey]?.text || ""} onChange={e => onTodayText(e.target.value)} />
+          </label>
+        </div>
+
+        {/* ── III · Patterns ── */}
+        <div className="h-col">
+          <SectionLabel>III · Patterns</SectionLabel>
+          <div className="h-entry-head">Since {season.name}, {seasonCards.length ? `${numberWords(seasonCards.length)} card${seasonCards.length === 1 ? "" : "s"}` : "no cards yet"}</div>
+          <div>
+            {suitRows.map(s => (
+              <div key={s.name} className="h-suit-row">
+                <span className="h-suit-name" style={{ color: s.color }}>{s.name}</span>
+                <span className="h-suit-tally"><Tally n={s.n} color={s.color} /></span>
+                <span className="h-suit-n" style={{ color: s.color }}>{s.n}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2, marginTop: 8 }}>
+            <div className="h-label sm">Most often together</div>
+            {pairNote ? (
+              <>
+                <div className="h-pair-names">{pairNote.c1} <span style={{ color: "var(--gilt)" }}>&amp;</span> {pairNote.c2}</div>
+                <div className="h-sky-sub" style={{ fontStyle: "italic" }}>{pairNote.text}</div>
+              </>
+            ) : (
+              <div className="h-sky-sub" style={{ fontStyle: "italic" }}>No two cards have met twice yet. Keep pulling; they'll find each other.</div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* ── IV · Register of readings ── */}
+      <section style={{ marginTop: "clamp(48px,7vw,80px)" }}>
+        <div className="h-register-top">
+          <SectionLabel>IV · Register of readings</SectionLabel>
+          <button className="h-link" onClick={() => onNavigate("journal")}>the whole register →</button>
+        </div>
+        <div className="h-register">
+          <div className="h-register-head">
+            <span style={{ flex: "0 0 96px" }}>Date</span><span style={{ flex: "0 0 140px" }}>Spread</span><span style={{ flex: "1 1 240px" }}>Cards</span><span style={{ flex: "0 0 160px" }}>Moon</span><span style={{ flex: "0 0 90px" }}>Theme</span>
+          </div>
+          {readings.length === 0 && (
+            <div className="h-register-row" style={{ cursor: "default" }}>
+              <span className="h-note">No readings yet. The cards are waiting. <button className="h-link" onClick={() => onNavigate("new")}>Begin one →</button></span>
+            </div>
+          )}
+          {readings.slice(0, 5).map(r => {
+            const d = new Date(r.ts), names = r.cards.filter(c => c.card).map(c => c.card), phase = moonPhaseOfDay(d);
+            const theme = r.tags?.find(t => t !== "card of the day") || (r.isCardOfDay ? "daily" : "—");
+            return (
+              <button key={r.id} className="h-register-row" onClick={() => onOpenReading(r)}>
+                <span className="h-reg-date">{dotDate(d)}</span>
+                <span className="h-reg-spread">{r.isCardOfDay ? "Card of the day" : REGISTER_SPREADS[r.spread] || SPREADS[r.spread]?.label}</span>
+                <span className="h-reg-cards">{names.slice(0, 3).join(" · ")}{names.length > 3 ? `, and ${numberWords(names.length - 3)} more` : ""}</span>
+                <span className="h-reg-moon"><MoonGlyph angle={moonAngle(d)} title={phase} style={{ transform: "translateY(2px)" }} />{phase.toLowerCase()}</span>
+                <span className="h-reg-theme">{theme}</span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+    </>
   );
 }
 
@@ -585,7 +769,7 @@ function CardTimeline({ readings }) {
 
   if (months.length < 1) return null;
 
-  const suitColors = { Major: "#b8a8d0", Wands: "#c9a84c", Cups: "#7a9cc4", Swords: "#a8c4b8", Pentacles: "#9ab87a" };
+  const suitColors = SUIT_COLORS;
   const maxCards = Math.max(...months.map(m => m.cards.length), 1);
 
   return (
@@ -611,7 +795,7 @@ function CardTimeline({ readings }) {
                     style={{
                       height: `${(count / totalSuits) * 100}%`,
                       background: suitColors[suit],
-                      opacity: 0.6,
+                      opacity: 0.75,
                     }}
                     title={`${suit}: ${count}`}
                   />
@@ -821,7 +1005,7 @@ function GrimoireCalendar({ journal, readings, onSelectDate, onSelectReading }) 
                     {SPREADS[r.spread]?.label}
                   </span>
                   {r.question && (
-                    <p className="cal-detail-preview" style={{ fontStyle: "italic" }}>"{r.question}"</p>
+                    <p className="cal-detail-preview" style={{ fontStyle: "italic" }}>“{r.question}”</p>
                   )}
                   <div className="card-preview" style={{ marginTop: "0.2rem" }}>
                     {r.cards.filter(c => c.card).map((c, ci) => (
@@ -842,13 +1026,24 @@ function GrimoireCalendar({ journal, readings, onSelectDate, onSelectReading }) 
               className="cal-detail-section clickable"
               onClick={() => onSelectDate(selectedKey)}
             >
-              <p className="cal-detail-preview" style={{ color: "#3a4a3a" }}>nothing recorded this day</p>
+              <p className="cal-detail-preview" style={{ color: "var(--soft)", fontStyle: "italic" }}>nothing recorded this day</p>
               <span className="cal-detail-link">start a journal entry →</span>
             </div>
           )}
         </div>
       )}
     </div>
+  );
+}
+
+// ── Paired herb, as written on a specimen label ─────────────
+function HerbLine({ card }) {
+  const herb = herbFor(card);
+  if (!herb) return null;
+  return (
+    <span className="herb-line">
+      <span className="herb-line-label">Paired herb</span> {herb.common}, <i>{herb.latin}</i> {herb.authority}
+    </span>
   );
 }
 
@@ -895,9 +1090,11 @@ function LibrarySearch({ readings, getCardHistory }) {
       {selected && CARD_MEANINGS[selected] && (
         <div className="library-card-detail" style={{ animation: "fadeIn 0.3s ease" }}>
           <div className="library-card-header" style={{ "--suit-color": suitColor(selected) }}>
-            <span style={{ color: suitColor(selected), fontSize: "1.5rem" }}>{suitSymbol(selected)}</span>
+            <div className="library-plate"><SuitPlate suit={suitOf(selected)} /></div>
             <div>
-              <span className="library-card-name" style={{ color: suitColor(selected) }}>{selected}</span>
+              <span className="library-card-numeral">{cardNumeral(selected)}</span>
+              <span className="library-card-name">{selected}</span>
+              <HerbLine card={selected} />
               {count > 0 && <span className="library-card-count">appeared {count}× in your readings</span>}
             </div>
           </div>
@@ -923,11 +1120,11 @@ function LibraryBrowse({ readings, getCardHistory }) {
   const [expandedCard, setExpandedCard] = useState(null);
 
   const suits = [
-    { name: "Major Arcana", cards: MAJOR_ARCANA, color: "#b8a8d0", sym: "✶" },
-    { name: "Wands", cards: MINOR_ARCANA.filter(c => c.includes("Wands")), color: "#c9a84c", sym: "🜂" },
-    { name: "Cups", cards: MINOR_ARCANA.filter(c => c.includes("Cups")), color: "#7a9cc4", sym: "🜄" },
-    { name: "Swords", cards: MINOR_ARCANA.filter(c => c.includes("Swords")), color: "#a8c4b8", sym: "🜁" },
-    { name: "Pentacles", cards: MINOR_ARCANA.filter(c => c.includes("Pentacles")), color: "#9ab87a", sym: "🜃" },
+    { name: "Major Arcana", cards: MAJOR_ARCANA, color: SUIT_COLORS.Major, sym: "✶" },
+    { name: "Wands", cards: MINOR_ARCANA.filter(c => c.includes("Wands")), color: SUIT_COLORS.Wands, sym: "🜂" },
+    { name: "Cups", cards: MINOR_ARCANA.filter(c => c.includes("Cups")), color: SUIT_COLORS.Cups, sym: "🜄" },
+    { name: "Swords", cards: MINOR_ARCANA.filter(c => c.includes("Swords")), color: SUIT_COLORS.Swords, sym: "🜁" },
+    { name: "Pentacles", cards: MINOR_ARCANA.filter(c => c.includes("Pentacles")), color: SUIT_COLORS.Pentacles, sym: "🜃" },
   ];
 
   return (
@@ -965,6 +1162,7 @@ function LibraryBrowse({ readings, getCardHistory }) {
                     </button>
                     {isExpanded && meaning && (
                       <div className="library-browse-meanings" style={{ animation: "fadeIn 0.2s ease" }}>
+                        <HerbLine card={card} />
                         <div className="library-meaning-block">
                           <span className="library-meaning-label">Upright</span>
                           <p className="library-meaning-text">{meaning.up}</p>
@@ -998,6 +1196,8 @@ export default function TarotJournal() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterTag, setFilterTag] = useState(null);
   const [statsTab, setStatsTab] = useState("overview"); // overview | pairs | timeline | moons
+  const [theme, setTheme] = useState(initialTheme); // vellum | lamplit
+  const [scrollTo, setScrollTo] = useState(null);
 
   // New reading form state
   const [spread, setSpread] = useState("single");
@@ -1062,10 +1262,45 @@ export default function TarotJournal() {
     setTimeout(() => setDailySaving(false), 600);
   };
 
+  // ── Paper & navigation ─────────────────────────────────────
+  const paper = useMemo(() => themeStyle(theme), [theme]);
+  useEffect(() => {
+    document.body.style.background = paper.paper;
+    try { localStorage.setItem("rr-theme", theme); } catch {}
+  }, [theme, paper]);
+
+  useEffect(() => {
+    if (!scrollTo) return;
+    document.getElementById(scrollTo)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setScrollTo(null);
+  }, [scrollTo, view]);
+
+  const go = (target) => {
+    if (target === "cotd") { setView("home"); setScrollTo("specimen"); return; }
+    if (target === "daily") setDailyDate(toDateKey(new Date()));
+    if (target === "new") { startNew(); return; }
+    setView(target);
+    window.scrollTo({ top: 0 });
+  };
+
+  // Home's "Today" page writes straight into the journal, keeping any mood
+  const saveTodayText = (text) => {
+    const key = toDateKey(new Date());
+    const prev = journal[key] || {};
+    const updated = { ...journal, [key]: { ...prev, text, moonPhase: getMoonPhase(new Date()).name, updatedAt: Date.now() } };
+    if (!text.trim() && !prev.mood) delete updated[key];
+    saveJournal(updated);
+  };
+
+  const updateReadingNotes = (id, notes) => {
+    saveReadings(readings.map(r => r.id === id ? { ...r, notes } : r));
+  };
+
   // ── New reading ────────────────────────────────────────────
   const startNew = () => {
     setSpread("single"); setQuestion(""); setCards({}); setReversals({}); setNotes(""); setTags([]);
     setView("new");
+    window.scrollTo({ top: 0 });
   };
 
   const saveReading = () => {
@@ -1161,7 +1396,6 @@ export default function TarotJournal() {
   }, [readings]);
 
   const canSave = SPREADS[spread].positions.every((_, i) => cards[i]?.trim());
-  const today = getMoonPhase();
   const moods = [
     { emoji: "🌿", label: "Grounded" },
     { emoji: "🔥", label: "Energized" },
@@ -1183,704 +1417,43 @@ export default function TarotJournal() {
 
   // ══════════════════════════════════════════════════════════
   return (
-    <div className="grimoire-root">
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=IM+Fell+English:ital@0;1&family=Cinzel+Decorative:wght@400;700&display=swap');
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-track { background: #090c09; }
-        ::-webkit-scrollbar-thumb { background: #1e2a1e; border-radius: 2px; }
+    <div className={`grimoire-root theme-${theme}`} style={paper.style}>
 
-        .grimoire-root {
-          min-height: 100vh; background: #090c09; color: #c8c4b0;
-          font-family: 'IM Fell English', Georgia, serif; position: relative;
-        }
-        .grimoire-root::before {
-          content: ''; position: fixed; inset: 0;
-          background:
-            radial-gradient(ellipse at 20% 0%, rgba(138,170,138,0.03) 0%, transparent 60%),
-            radial-gradient(ellipse at 80% 100%, rgba(184,168,208,0.02) 0%, transparent 60%);
-          pointer-events: none; z-index: 0;
-        }
-
-        .header {
-          background: linear-gradient(180deg, #0d120d 0%, rgba(9,12,9,0.95) 100%);
-          border-bottom: 1px solid #1e2a1e; padding: 1rem 1.5rem;
-          position: sticky; top: 0; z-index: 20;
-          display: flex; align-items: center; justify-content: space-between;
-          backdrop-filter: blur(12px);
-        }
-        .app-title {
-          font-family: 'Cinzel Decorative', 'Cinzel', serif;
-          font-size: 0.95rem; font-weight: 700; letter-spacing: 0.2em;
-          text-transform: uppercase; color: #8aaa8a; margin: 0;
-          text-shadow: 0 0 30px rgba(138,170,138,0.15);
-        }
-        .app-sub { font-family: 'IM Fell English', serif; font-style: italic; font-size: 0.72rem; color: #3a4a3a; margin: 0.15rem 0 0; }
-
-        .nav { display: flex; gap: 0.15rem; }
-        .nav-btn {
-          font-family: 'Cinzel', serif; font-size: 0.5rem; font-weight: 600;
-          letter-spacing: 0.12em; text-transform: uppercase;
-          padding: 0.3rem 0.6rem; background: none; border: 1px solid transparent;
-          color: #3a4a3a; cursor: pointer; transition: all 0.2s;
-        }
-        .nav-btn:hover { color: #6a8a6a; border-color: #2a3a2a; }
-        .nav-btn.active { color: #8aaa8a; border-color: #3a5a3a; background: rgba(138,170,138,0.05); }
-
-        .new-btn {
-          font-family: 'Cinzel', serif; font-size: 0.55rem; font-weight: 700;
-          letter-spacing: 0.12em; text-transform: uppercase;
-          color: #090c09; background: linear-gradient(135deg, #6a8a6a, #9ab89a);
-          border: none; padding: 0.4rem 1rem; cursor: pointer; transition: all 0.2s;
-        }
-        .new-btn:hover { filter: brightness(1.15); transform: translateY(-1px); }
-
-        .page { padding: 1.2rem 1.5rem; max-width: 720px; margin: 0 auto; position: relative; z-index: 1; animation: fadeIn 0.3s ease; }
-
-        /* Home */
-        .home-grid { display: flex; flex-direction: column; gap: 1.2rem; }
-        .home-moon {
-          background: linear-gradient(135deg, #0d120d, #101810);
-          border: 1px solid #1e2a1e; padding: 1.2rem 1.5rem;
-          display: flex; align-items: center; gap: 1.2rem;
-        }
-        .home-moon-symbol { font-size: 2rem; line-height: 1; }
-        .home-moon-info { flex: 1; }
-        .home-moon-name { font-family: 'Cinzel', serif; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; color: #b8a8d0; }
-        .home-moon-desc { font-style: italic; font-size: 0.8rem; color: #5a6a5a; margin-top: 0.2rem; }
-        .home-moon-date { font-family: 'Cinzel', serif; font-size: 0.5rem; letter-spacing: 0.1em; color: #3a4a3a; text-transform: uppercase; }
-
-        /* COTD */
-        .cotd-container { background: linear-gradient(135deg, #0d120d, #0f1510); border: 1px solid #1e2a1e; padding: 1.2rem 1.5rem; }
-        .cotd-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
-        .cotd-label { font-family: 'Cinzel', serif; font-size: 0.6rem; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: #5a7a5a; }
-        .cotd-date { font-family: 'Cinzel', serif; font-size: 0.5rem; letter-spacing: 0.1em; text-transform: uppercase; color: #3a4a3a; }
-        .cotd-card-back {
-          width: 120px; height: 180px; margin: 0 auto;
-          cursor: pointer; perspective: 600px; transition: transform 0.3s;
-        }
-        .cotd-card-back:hover { transform: scale(1.03); }
-        .cotd-card-back.flipping { animation: cardFlip 0.6s ease; }
-        .cotd-back-design {
-          width: 100%; height: 100%;
-          background: linear-gradient(145deg, #141c14, #1a241a);
-          border: 1px solid #2a3a2a;
-          display: flex; align-items: center; justify-content: center;
-          position: relative; overflow: hidden;
-        }
-        .cotd-back-design::before { content: ''; position: absolute; inset: 4px; border: 1px solid #2a3a2a; }
-        .cotd-back-design::after {
-          content: ''; position: absolute; inset: 8px;
-          border: 1px solid rgba(58,90,58,0.2);
-          background: repeating-linear-gradient(45deg, transparent, transparent 8px, rgba(58,90,58,0.03) 8px, rgba(58,90,58,0.03) 9px);
-        }
-        .cotd-back-inner { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; z-index: 1; }
-        .cotd-back-symbol { font-size: 1.5rem; color: #3a5a3a; }
-        .cotd-back-text { font-family: 'Cinzel', serif; font-size: 0.4rem; letter-spacing: 0.2em; text-transform: uppercase; color: #2a3a2a; }
-        .cotd-revealed { text-align: center; animation: fadeIn 0.4s ease; }
-        .cotd-card-face {
-          padding: 1rem; display: inline-flex; flex-direction: column;
-          align-items: center; gap: 0.3rem;
-          border: 1px solid #1e2a1e; background: #0d120d; min-width: 160px;
-        }
-        .cotd-suit { font-size: 1.5rem; }
-        .cotd-card-name { font-family: 'Cinzel', serif; font-size: 0.85rem; font-weight: 600; color: var(--suit-color); }
-        .cotd-log-btn {
-          font-family: 'Cinzel', serif; font-size: 0.5rem; font-weight: 600;
-          letter-spacing: 0.12em; text-transform: uppercase;
-          color: #5a7a5a; background: none; border: 1px solid #2a3a2a;
-          padding: 0.3rem 0.8rem; cursor: pointer; margin-top: 0.8rem; transition: all 0.2s;
-        }
-        .cotd-log-btn:hover { color: #8aaa8a; border-color: #3a5a3a; }
-        .cotd-logged { font-family: 'Cinzel', serif; font-size: 0.5rem; letter-spacing: 0.12em; text-transform: uppercase; color: #3a5a3a; display: block; margin-top: 0.8rem; }
-
-        .cotd-mode-picker { display: flex; gap: 0.6rem; justify-content: center; flex-wrap: wrap; }
-        .cotd-mode-btn {
-          display: flex; flex-direction: column; align-items: center; gap: 0.3rem;
-          padding: 1rem 1.2rem; background: #0d120d; border: 1px solid #1e2a1e;
-          cursor: pointer; transition: all 0.2s; min-width: 140px;
-          font-family: inherit; color: inherit;
-        }
-        .cotd-mode-btn:hover { background: #0f150f; border-color: #3a5a3a; transform: translateY(-1px); }
-        .cotd-mode-icon { font-size: 1.3rem; }
-        .cotd-mode-label {
-          font-family: 'Cinzel', serif; font-size: 0.5rem; font-weight: 600;
-          letter-spacing: 0.12em; text-transform: uppercase; color: #8aaa8a;
-        }
-        .cotd-mode-sub { font-size: 0.72rem; font-style: italic; color: #3a4a3a; }
-
-        .cotd-switch-mode {
-          font-family: 'Cinzel', serif; font-size: 0.42rem; letter-spacing: 0.1em;
-          text-transform: uppercase; color: #3a4a3a; background: none; border: none;
-          cursor: pointer; padding: 0; margin-top: 0.8rem; transition: color 0.2s;
-        }
-        .cotd-switch-mode:hover { color: #5a7a5a; }
-
-        .cotd-physical { animation: fadeIn 0.3s ease; }
-
-        @keyframes cardFlip {
-          0% { transform: scale(1) rotateY(0); }
-          50% { transform: scale(1.05) rotateY(90deg); }
-          100% { transform: scale(1) rotateY(180deg); opacity: 0; }
-        }
-
-        .home-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
-        .home-tile {
-          background: #0d120d; border: 1px solid #1a221a;
-          padding: 1rem; cursor: pointer; transition: all 0.2s;
-          display: flex; flex-direction: column; gap: 0.3rem;
-        }
-        .home-tile:hover { background: #0f150f; border-color: #2a3a2a; transform: translateY(-1px); }
-        .home-tile-icon { font-size: 1.2rem; }
-        .home-tile-label { font-family: 'Cinzel', serif; font-size: 0.55rem; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; color: #6a8a6a; }
-        .home-tile-sub { font-size: 0.75rem; color: #3a4a3a; font-style: italic; }
-
-        /* Search */
-        .search-bar { display: flex; gap: 0.5rem; margin-bottom: 1rem; align-items: center; }
-        .search-input {
-          flex: 1; background: #0d120d; border: 1px solid #1e2a1e;
-          color: #c8c4b0; font-family: 'IM Fell English', serif;
-          font-size: 0.85rem; padding: 0.45rem 0.7rem; outline: none; transition: border-color 0.2s;
-        }
-        .search-input:focus { border-color: #3a5a3a; }
-        .search-input::placeholder { color: #2a3a2a; }
-
-        .filter-tags { display: flex; gap: 0.3rem; flex-wrap: wrap; margin-bottom: 0.8rem; }
-        .filter-tag {
-          font-family: 'Cinzel', serif; font-size: 0.45rem; letter-spacing: 0.1em;
-          text-transform: uppercase; padding: 0.2rem 0.5rem;
-          border: 1px solid #1e2a1e; color: #3a4a3a; cursor: pointer;
-          transition: all 0.2s; background: none;
-        }
-        .filter-tag:hover { color: #5a7a5a; border-color: #2a3a2a; }
-        .filter-tag.active { color: #8aaa8a; border-color: #3a5a3a; background: rgba(138,170,138,0.06); }
-
-        .reading-list { display: flex; flex-direction: column; gap: 0.5rem; }
-        .reading-card {
-          background: #0d120d; border: 1px solid #1a221a; border-left: 2px solid #3a5a3a;
-          padding: 0.9rem 1rem; cursor: pointer; transition: all 0.2s; animation: fadeIn 0.2s ease;
-        }
-        .reading-card:hover { background: #0f150f; border-left-color: #6a8a6a; }
-        .reading-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; }
-        .reading-date { font-family: 'Cinzel', serif; font-size: 0.5rem; letter-spacing: 0.1em; text-transform: uppercase; color: #3a4a3a; margin: 0 0 0.3rem; display: flex; align-items: center; gap: 0.4rem; }
-        .reading-question { font-size: 0.92rem; color: #c8c4b0; margin: 0 0 0.4rem; line-height: 1.4; font-style: italic; }
-        .reading-question-empty { font-size: 0.85rem; color: #3a4a3a; font-style: italic; margin: 0 0 0.4rem; }
-        .reading-spread-badge { font-family: 'Cinzel', serif; font-size: 0.45rem; letter-spacing: 0.1em; text-transform: uppercase; color: #5a7a5a; border: 1px solid #2a3a2a; padding: 0.1rem 0.35rem; display: inline-block; }
-        .card-preview { display: flex; gap: 0.3rem; flex-wrap: wrap; margin-top: 0.4rem; }
-        .card-chip { font-size: 0.75rem; color: #8a9a8a; }
-        .card-chip.reversed { opacity: 0.6; text-decoration: line-through; text-decoration-color: #5a6a5a; }
-        .reading-tags { display: flex; gap: 0.25rem; flex-wrap: wrap; margin-top: 0.4rem; }
-        .reading-tag-pill { font-family: 'Cinzel', serif; font-size: 0.4rem; letter-spacing: 0.08em; text-transform: uppercase; color: #5a6a5a; border: 1px solid #1e2a1e; padding: 0.08rem 0.3rem; background: rgba(138,170,138,0.03); }
-        .delete-btn { background: none; border: none; color: #2a3a2a; cursor: pointer; font-size: 0.75rem; padding: 0.1rem 0.3rem; transition: color 0.2s; flex-shrink: 0; }
-        .delete-btn:hover { color: #8a4a4a; }
-
-        /* Detail */
-        .detail-back { font-family: 'Cinzel', serif; font-size: 0.5rem; letter-spacing: 0.12em; text-transform: uppercase; color: #5a7a5a; background: none; border: none; cursor: pointer; padding: 0; margin-bottom: 1.2rem; display: flex; align-items: center; gap: 0.3rem; }
-        .detail-back:hover { color: #8aaa8a; }
-        .detail-question { font-size: 1.05rem; font-style: italic; color: #d8d4c0; line-height: 1.5; margin: 0 0 0.3rem; }
-        .detail-meta { font-family: 'Cinzel', serif; font-size: 0.5rem; letter-spacing: 0.1em; text-transform: uppercase; color: #3a4a3a; margin: 0 0 0.4rem; display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-
-        .cards-layout { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.5rem; }
-        .card-row {
-          display: flex; align-items: flex-start; gap: 0.8rem;
-          padding: 0.6rem 0.8rem; background: #0d120d;
-          border: 1px solid #1a221a; border-left: 2px solid var(--suit-color);
-          position: relative;
-        }
-        .card-position { font-family: 'Cinzel', serif; font-size: 0.48rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #3a4a3a; min-width: 85px; margin-top: 0.15rem; flex-shrink: 0; }
-        .card-name { font-size: 0.9rem; color: var(--suit-color); flex: 1; }
-        .card-name.reversed { font-style: italic; opacity: 0.75; }
-        .reversed-tag { font-family: 'Cinzel', serif; font-size: 0.4rem; letter-spacing: 0.08em; text-transform: uppercase; color: #6a4a4a; border: 1px solid #4a2a2a; padding: 0.08rem 0.25rem; margin-left: 0.4rem; vertical-align: middle; }
-        .reversed-tag-sm { font-family: 'Cinzel', serif; font-size: 0.35rem; letter-spacing: 0.08em; text-transform: uppercase; color: #6a4a4a; border: 1px solid #4a2a2a; padding: 0.05rem 0.2rem; margin-left: 0.3rem; vertical-align: middle; }
-        .suit-sym { font-size: 0.85rem; flex-shrink: 0; }
-        .card-whisper { font-size: 0.68rem; color: #3a4a3a; font-style: italic; position: absolute; right: 0.8rem; bottom: 0.25rem; }
-        .card-whisper-inline { font-size: 0.68rem; color: #3a4a3a; font-style: italic; flex-shrink: 0; }
-
-        .card-meaning-text {
-          font-size: 0.8rem; font-style: italic; color: #7a8a6a;
-          margin-top: 0.7rem; line-height: 1.5; max-width: 320px;
-          margin-left: auto; margin-right: auto;
-        }
-
-        .card-row-with-meaning {
-          background: #0d120d; border: 1px solid #1a221a;
-          border-left: 2px solid var(--suit-color);
-          padding: 0.6rem 0.8rem; position: relative;
-        }
-        .card-row-main {
-          display: flex; align-items: flex-start; gap: 0.8rem;
-        }
-        .card-meaning-row {
-          font-size: 0.75rem; font-style: italic; color: #5a6a5a;
-          margin-top: 0.3rem; padding-left: 1.65rem; line-height: 1.4;
-        }
-
-        /* Celtic Cross */
-        .celtic-cross-container { margin-bottom: 1.5rem; overflow-x: auto; }
-        .celtic-cross-grid { display: flex; gap: 1.5rem; min-width: 500px; align-items: flex-start; }
-        .cross-section {
-          display: grid;
-          grid-template-areas: ".      crown   ." "past   center  future" ".      found   .";
-          grid-template-columns: 1fr 1fr 1fr; grid-template-rows: auto auto auto;
-          gap: 0.4rem; flex: 1;
-        }
-        .cross-pos { display: flex; justify-content: center; align-items: center; min-height: 70px; }
-        .cross-pos.crown { grid-area: crown; }
-        .cross-pos.past { grid-area: past; }
-        .cross-pos.center { grid-area: center; position: relative; min-height: 100px; }
-        .cross-pos.future { grid-area: future; }
-        .cross-pos.foundation { grid-area: found; }
-        .cross-challenge-overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(90deg); opacity: 0.85; z-index: 2; }
-        .staff-section { display: flex; flex-direction: column; gap: 0.4rem; min-width: 140px; }
-        .cross-card-spatial {
-          background: #0d120d; border: 1px solid #1a221a;
-          border-left: 2px solid var(--suit-color);
-          padding: 0.4rem 0.6rem; width: 100%;
-          display: flex; flex-direction: column; gap: 0.1rem;
-        }
-        .cross-position-label { font-family: 'Cinzel', serif; font-size: 0.38rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #3a4a3a; }
-        .cross-suit-sym { font-size: 0.7rem; }
-        .cross-card-name { font-size: 0.78rem; color: var(--suit-color); }
-        .cross-card-name.reversed { font-style: italic; opacity: 0.75; }
-        .cross-whisper { font-size: 0.55rem; color: #3a4a3a; font-style: italic; }
-        .cross-meaning { font-size: 0.55rem; color: #5a6a5a; font-style: italic; line-height: 1.4; margin-top: 0.1rem; }
-
-        .notes-section { margin-top: 1rem; }
-        .notes-label { font-family: 'Cinzel', serif; font-size: 0.5rem; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; color: #5a7a5a; margin: 0 0 0.4rem; }
-        .notes-text { font-size: 0.88rem; color: #9a9a88; line-height: 1.7; white-space: pre-wrap; font-style: italic; }
-
-        /* Form */
-        .form-section { margin-bottom: 1.2rem; }
-        .form-label { font-family: 'Cinzel', serif; font-size: 0.5rem; font-weight: 600; letter-spacing: 0.15em; text-transform: uppercase; color: #5a7a5a; margin: 0 0 0.4rem; display: block; }
-        .spread-tabs { display: flex; gap: 0; border: 1px solid #1e2a1e; width: fit-content; margin-bottom: 1rem; }
-        .spread-tab {
-          font-family: 'Cinzel', serif; font-size: 0.55rem; font-weight: 600;
-          letter-spacing: 0.1em; text-transform: uppercase;
-          padding: 0.35rem 0.8rem; cursor: pointer;
-          border-right: 1px solid #1e2a1e; color: #3a4a3a;
-          background: transparent; transition: all 0.2s;
-        }
-        .spread-tab:last-child { border-right: none; }
-        .spread-tab.active { color: #8aaa8a; background: rgba(138,170,138,0.06); }
-        .spread-tab:hover:not(.active) { color: #5a7a5a; }
-
-        .q-input { width: 100%; background: #0d120d; border: 1px solid #1e2a1e; color: #d8d4c0; font-family: 'IM Fell English', serif; font-style: italic; font-size: 0.95rem; padding: 0.5rem 0.7rem; outline: none; transition: border-color 0.2s; }
-        .q-input:focus { border-color: #3a5a3a; }
-        .q-input::placeholder { color: #2a3a2a; }
-
-        .positions-list { display: flex; flex-direction: column; gap: 0.6rem; }
-        .position-row { display: flex; flex-direction: column; gap: 0.2rem; }
-        .inline-meaning {
-          display: flex; align-items: flex-start; gap: 0.35rem;
-          padding: 0.35rem 0.5rem; margin-top: 0.1rem;
-          background: rgba(138,170,138,0.03);
-          border-left: 2px solid #2a3a2a;
-        }
-        .inline-meaning-icon { font-size: 0.65rem; flex-shrink: 0; margin-top: 0.05rem; }
-        .inline-meaning-text { font-size: 0.73rem; font-style: italic; color: #6a7a5a; line-height: 1.4; }
-        .position-label { font-family: 'Cinzel', serif; font-size: 0.45rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #4a6a4a; }
-        .card-input { background: #0d120d; border: 1px solid #1e2a1e; color: #d8d4c0; font-family: 'IM Fell English', serif; font-size: 0.88rem; padding: 0.4rem 0.7rem; outline: none; transition: border-color 0.2s; width: 100%; }
-        .card-input:focus { border-color: #3a5a3a; }
-        .card-input::placeholder { color: #2a3a2a; }
-        .card-dropdown { position: absolute; left: 0; right: 0; top: calc(100% + 2px); background: #141c14; border: 1px solid #2a3a2a; z-index: 50; max-height: 200px; overflow-y: auto; box-shadow: 0 8px 24px rgba(0,0,0,0.7); }
-        .card-option { font-family: 'IM Fell English', serif; font-size: 0.85rem; padding: 0.35rem 0.7rem; cursor: pointer; color: #9a9a88; transition: background 0.1s; display: flex; align-items: center; }
-        .card-option:hover { background: rgba(138,170,138,0.06); color: #c8c4b0; }
-        .rev-toggle { font-family: 'Cinzel', serif; font-size: 0.45rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 0.3rem 0.45rem; border: 1px solid #1e2a1e; color: #3a4a3a; cursor: pointer; white-space: nowrap; transition: all 0.2s; background: #0d120d; }
-        .rev-toggle.active { color: #8a6a6a; border-color: #4a2a2a; background: rgba(138,106,106,0.08); }
-
-        .n-textarea { width: 100%; background: #0d120d; border: 1px solid #1e2a1e; color: #c8c4b0; font-family: 'IM Fell English', serif; font-size: 0.88rem; padding: 0.5rem 0.7rem; outline: none; resize: vertical; line-height: 1.6; transition: border-color 0.2s; }
-        .n-textarea:focus { border-color: #3a5a3a; }
-        .n-textarea::placeholder { color: #2a3a2a; }
-
-        .tag-input-wrap { display: flex; flex-direction: column; gap: 0.4rem; }
-        .tags-display { display: flex; gap: 0.3rem; flex-wrap: wrap; }
-        .tag-pill { font-family: 'Cinzel', serif; font-size: 0.45rem; letter-spacing: 0.1em; text-transform: uppercase; color: #8aaa8a; border: 1px solid #3a5a3a; padding: 0.15rem 0.5rem; background: rgba(138,170,138,0.06); display: inline-flex; align-items: center; gap: 0.3rem; }
-        .tag-remove { cursor: pointer; color: #5a7a5a; font-size: 0.65rem; }
-        .tag-remove:hover { color: #8a4a4a; }
-
-        .form-actions { display: flex; gap: 0.6rem; margin-top: 1.2rem; }
-        .save-btn { font-family: 'Cinzel', serif; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: #090c09; background: linear-gradient(135deg, #6a8a6a, #9ab89a); border: none; padding: 0.45rem 1.3rem; cursor: pointer; }
-        .save-btn:disabled { opacity: 0.3; cursor: default; }
-        .save-btn:not(:disabled):hover { filter: brightness(1.12); }
-        .cancel-btn { font-family: 'Cinzel', serif; font-size: 0.6rem; letter-spacing: 0.12em; text-transform: uppercase; color: #3a4a3a; background: none; border: 1px solid #1e2a1e; padding: 0.45rem 1rem; cursor: pointer; transition: all 0.2s; }
-        .cancel-btn:hover { border-color: #3a5a3a; color: #5a7a5a; }
-
-        /* Daily Journal */
-        .daily-moon-block { display: flex; align-items: center; gap: 0.8rem; background: linear-gradient(135deg, #0d120d, #101810); border: 1px solid #1e2a1e; padding: 0.8rem 1rem; margin-bottom: 1.2rem; }
-        .daily-moon-sym { font-size: 1.5rem; }
-        .daily-moon-text { font-family: 'Cinzel', serif; font-size: 0.55rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #b8a8d0; }
-        .daily-moon-desc { font-size: 0.75rem; font-style: italic; color: #5a6a5a; margin-top: 0.1rem; }
-        .daily-date-nav { display: flex; align-items: center; gap: 0.6rem; }
-        .daily-date-btn { background: none; border: 1px solid #1e2a1e; color: #5a7a5a; cursor: pointer; padding: 0.2rem 0.5rem; font-size: 0.8rem; transition: all 0.2s; font-family: 'Cinzel', serif; }
-        .daily-date-btn:hover { border-color: #3a5a3a; color: #8aaa8a; }
-        .daily-date-display { font-family: 'Cinzel', serif; font-size: 0.6rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #8aaa8a; min-width: 140px; text-align: center; }
-        .daily-today-btn { font-family: 'Cinzel', serif; font-size: 0.4rem; letter-spacing: 0.1em; text-transform: uppercase; background: none; border: 1px solid #1e2a1e; color: #3a4a3a; padding: 0.15rem 0.4rem; cursor: pointer; transition: all 0.2s; }
-        .daily-today-btn:hover { color: #5a7a5a; border-color: #2a3a2a; }
-
-        .mood-picker { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 1rem; }
-        .mood-btn { display: flex; flex-direction: column; align-items: center; gap: 0.15rem; padding: 0.4rem 0.5rem; border: 1px solid #1e2a1e; background: none; cursor: pointer; transition: all 0.2s; min-width: 50px; }
-        .mood-btn:hover { border-color: #2a3a2a; background: rgba(138,170,138,0.03); }
-        .mood-btn.active { border-color: #3a5a3a; background: rgba(138,170,138,0.08); }
-        .mood-emoji { font-size: 1rem; }
-        .mood-label { font-family: 'Cinzel', serif; font-size: 0.35rem; letter-spacing: 0.08em; text-transform: uppercase; color: #3a4a3a; }
-        .mood-btn.active .mood-label { color: #8aaa8a; }
-
-        .daily-textarea { width: 100%; background: #0d120d; border: 1px solid #1e2a1e; color: #c8c4b0; font-family: 'IM Fell English', serif; font-size: 0.9rem; padding: 0.8rem; outline: none; resize: vertical; line-height: 1.8; transition: border-color 0.2s; min-height: 200px; }
-        .daily-textarea:focus { border-color: #3a5a3a; }
-        .daily-textarea::placeholder { color: #2a3a2a; }
-
-        .daily-save-row { display: flex; align-items: center; gap: 0.8rem; margin-top: 0.8rem; }
-        .daily-save-btn { font-family: 'Cinzel', serif; font-size: 0.55rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #090c09; background: linear-gradient(135deg, #6a8a6a, #9ab89a); border: none; padding: 0.4rem 1rem; cursor: pointer; }
-        .daily-save-btn:hover { filter: brightness(1.12); }
-        .daily-saved { font-family: 'Cinzel', serif; font-size: 0.45rem; letter-spacing: 0.1em; text-transform: uppercase; color: #3a5a3a; animation: fadeIn 0.3s ease; }
-
-        /* Reflection prompt */
-        .prompt-nudge {
-          font-family: 'Cinzel', serif; font-size: 0.45rem; letter-spacing: 0.1em;
-          text-transform: uppercase; color: #3a4a3a; background: none;
-          border: 1px dashed #1e2a1e; padding: 0.3rem 0.7rem;
-          cursor: pointer; transition: all 0.2s; margin-bottom: 0.8rem;
-        }
-        .prompt-nudge:hover { color: #5a7a5a; border-color: #3a5a3a; }
-        .prompt-text {
-          font-style: italic; font-size: 0.88rem; color: #7a8a6a;
-          padding: 0.7rem 1rem; margin-bottom: 1rem;
-          border-left: 2px solid #3a5a3a;
-          background: rgba(138,170,138,0.03);
-          animation: fadeIn 0.4s ease;
-          line-height: 1.6;
-        }
-
-        /* Stats */
-        .stats-tabs { display: flex; gap: 0; border: 1px solid #1e2a1e; width: fit-content; margin-bottom: 1.2rem; }
-        .stats-tab {
-          font-family: 'Cinzel', serif; font-size: 0.5rem; font-weight: 600;
-          letter-spacing: 0.1em; text-transform: uppercase;
-          padding: 0.35rem 0.7rem; cursor: pointer;
-          border-right: 1px solid #1e2a1e; color: #3a4a3a;
-          background: transparent; transition: all 0.2s;
-        }
-        .stats-tab:last-child { border-right: none; }
-        .stats-tab.active { color: #8aaa8a; background: rgba(138,170,138,0.06); }
-        .stats-tab:hover:not(.active) { color: #5a7a5a; }
-
-        .stats-summary { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.6rem; margin-bottom: 1.5rem; }
-        .stat-box { background: #0d120d; border: 1px solid #1a221a; padding: 0.7rem 0.8rem; }
-        .stat-box-label { font-family: 'Cinzel', serif; font-size: 0.45rem; letter-spacing: 0.12em; text-transform: uppercase; color: #3a4a3a; margin: 0 0 0.2rem; }
-        .stat-box-value { font-family: 'Cinzel', serif; font-size: 1.3rem; color: #8aaa8a; margin: 0; }
-
-        .stats-grid { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.8rem; }
-        .stat-row { display: flex; align-items: center; gap: 0.6rem; }
-        .stat-card { font-size: 0.82rem; color: var(--suit-color); min-width: 150px; }
-        .stat-bar-wrap { flex: 1; background: #1a221a; height: 3px; border-radius: 2px; }
-        .stat-bar { height: 3px; border-radius: 2px; background: var(--suit-color); opacity: 0.6; transition: width 0.5s ease; }
-        .stat-count { font-family: 'Cinzel', serif; font-size: 0.5rem; color: #3a4a3a; min-width: 20px; text-align: right; }
-        .stat-label { font-family: 'Cinzel', serif; font-size: 0.5rem; letter-spacing: 0.1em; text-transform: uppercase; color: #3a4a3a; margin-bottom: 0.5rem; }
-
-        .suit-dist { display: flex; gap: 0.5rem; margin-top: 0.8rem; flex-wrap: wrap; }
-        .suit-dist-item { background: #0d120d; border: 1px solid #1a221a; padding: 0.5rem 0.7rem; display: flex; flex-direction: column; align-items: center; gap: 0.2rem; min-width: 60px; }
-        .suit-dist-sym { font-size: 1rem; }
-        .suit-dist-count { font-family: 'Cinzel', serif; font-size: 0.9rem; color: #8aaa8a; }
-        .suit-dist-name { font-family: 'Cinzel', serif; font-size: 0.38rem; letter-spacing: 0.08em; text-transform: uppercase; color: #3a4a3a; }
-
-        /* Card pairs */
-        .pair-list { display: flex; flex-direction: column; gap: 0.5rem; }
-        .pair-row {
-          background: #0d120d; border: 1px solid #1a221a;
-          padding: 0.6rem 0.8rem; display: flex; align-items: center;
-          gap: 0.6rem; animation: fadeIn 0.2s ease;
-        }
-        .pair-cards { flex: 1; font-size: 0.85rem; color: #c8c4b0; }
-        .pair-arrow { color: #3a5a3a; font-size: 0.75rem; margin: 0 0.2rem; }
-        .pair-count { font-family: 'Cinzel', serif; font-size: 0.5rem; letter-spacing: 0.1em; color: #5a7a5a; min-width: 40px; text-align: right; }
-        .pair-empty { font-style: italic; color: #2a3a2a; font-size: 0.85rem; padding: 1.5rem 0; text-align: center; }
-
-        /* Timeline */
-        .timeline-container { margin: 1rem 0; overflow-x: auto; }
-        .timeline-scroll { display: flex; gap: 0.3rem; align-items: flex-end; min-height: 180px; padding-bottom: 0.5rem; }
-        .timeline-month {
-          display: flex; flex-direction: column; align-items: center;
-          gap: 0.2rem; min-width: 55px; flex-shrink: 0;
-        }
-        .timeline-month-label { font-family: 'Cinzel', serif; font-size: 0.38rem; letter-spacing: 0.08em; text-transform: uppercase; color: #3a4a3a; order: 3; }
-        .timeline-bar-stack {
-          width: 28px; display: flex; flex-direction: column;
-          border-radius: 2px; overflow: hidden; order: 1;
-          border: 1px solid #1a221a;
-        }
-        .timeline-bar-segment { width: 100%; transition: height 0.4s ease; }
-        .timeline-count { font-family: 'Cinzel', serif; font-size: 0.45rem; color: #5a7a5a; order: 2; }
-        .timeline-top { font-size: 0.55rem; white-space: nowrap; order: 4; max-width: 80px; overflow: hidden; text-overflow: ellipsis; }
-
-        /* Moon distribution */
-        .moon-dist-list { display: flex; flex-direction: column; gap: 0.3rem; }
-        .moon-dist-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.3rem 0; }
-        .moon-dist-phase { font-size: 0.85rem; min-width: 130px; color: #b8a8d0; display: flex; align-items: center; gap: 0.4rem; }
-        .moon-dist-phase-name { font-size: 0.78rem; }
-        .moon-dist-bar-wrap { flex: 1; background: #1a221a; height: 3px; border-radius: 2px; }
-        .moon-dist-bar { height: 3px; border-radius: 2px; background: #b8a8d0; opacity: 0.5; transition: width 0.5s ease; }
-
-        /* Mood distribution in stats */
-        .mood-dist { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }
-        .mood-dist-item { display: flex; flex-direction: column; align-items: center; gap: 0.15rem; background: #0d120d; border: 1px solid #1a221a; padding: 0.4rem 0.6rem; min-width: 50px; }
-        .mood-dist-emoji { font-size: 1rem; }
-        .mood-dist-count { font-family: 'Cinzel', serif; font-size: 0.8rem; color: #8aaa8a; }
-        .mood-dist-label { font-family: 'Cinzel', serif; font-size: 0.35rem; letter-spacing: 0.08em; text-transform: uppercase; color: #3a4a3a; }
-
-        /* Calendar */
-        .cal-container { }
-        .cal-nav { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1.2rem; }
-        .cal-month-label {
-          font-family: 'Cinzel', serif; font-size: 0.7rem; font-weight: 600;
-          letter-spacing: 0.15em; text-transform: uppercase; color: #8aaa8a;
-          min-width: 160px; text-align: center;
-        }
-        .cal-grid {
-          display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px;
-          margin-bottom: 0.8rem;
-        }
-        .cal-day-header {
-          font-family: 'Cinzel', serif; font-size: 0.38rem; font-weight: 600;
-          letter-spacing: 0.1em; text-transform: uppercase; color: #3a4a3a;
-          text-align: center; padding: 0.3rem 0;
-        }
-        .cal-cell {
-          aspect-ratio: 1; display: flex; flex-direction: column;
-          align-items: center; justify-content: center; gap: 0.15rem;
-          background: #0d120d; border: 1px solid #141c14;
-          cursor: pointer; transition: all 0.15s; position: relative;
-          min-height: 40px;
-        }
-        .cal-cell.empty { background: transparent; border-color: transparent; cursor: default; }
-        .cal-cell.future { opacity: 0.3; cursor: default; }
-        .cal-cell:not(.empty):not(.future):hover { background: #0f150f; border-color: #2a3a2a; }
-        .cal-cell.today { border-color: #3a5a3a; }
-        .cal-cell.today .cal-day-num { color: #8aaa8a; }
-        .cal-cell.selected { background: #0f150f; border-color: #5a8a5a; box-shadow: 0 0 8px rgba(138,170,138,0.1); }
-        .cal-cell.has-entry { background: #0e140e; }
-
-        .cal-day-num {
-          font-family: 'Cinzel', serif; font-size: 0.55rem; font-weight: 600; color: #5a6a5a;
-        }
-        .cal-dots { display: flex; gap: 3px; }
-        .cal-dot {
-          width: 4px; height: 4px; border-radius: 50%; display: inline-block;
-        }
-        .cal-dot.journal-dot { background: #7a9cc4; }
-        .cal-dot.reading-dot { background: #c9a84c; }
-        .cal-mood-mini { font-size: 0.5rem; line-height: 1; position: absolute; bottom: 2px; right: 3px; }
-
-        .cal-legend {
-          display: flex; gap: 1rem; justify-content: center; margin-bottom: 1.2rem;
-        }
-        .cal-legend-item {
-          font-family: 'Cinzel', serif; font-size: 0.4rem; letter-spacing: 0.1em;
-          text-transform: uppercase; color: #3a4a3a;
-          display: flex; align-items: center; gap: 0.3rem;
-        }
-
-        .cal-detail {
-          background: #0d120d; border: 1px solid #1e2a1e; padding: 1rem;
-        }
-        .cal-detail-header {
-          display: flex; align-items: center; justify-content: space-between;
-          margin-bottom: 0.8rem;
-        }
-        .cal-detail-date {
-          font-family: 'Cinzel', serif; font-size: 0.55rem; font-weight: 600;
-          letter-spacing: 0.12em; text-transform: uppercase; color: #8aaa8a;
-        }
-        .cal-detail-label {
-          font-family: 'Cinzel', serif; font-size: 0.48rem; font-weight: 600;
-          letter-spacing: 0.12em; text-transform: uppercase; color: #5a7a5a;
-        }
-        .cal-detail-section {
-          padding: 0.6rem 0.8rem; background: rgba(138,170,138,0.02);
-          border: 1px solid #1a221a; transition: all 0.15s;
-        }
-        .cal-detail-section.clickable { cursor: pointer; }
-        .cal-detail-section.clickable:hover { background: rgba(138,170,138,0.05); border-color: #2a3a2a; }
-        .cal-detail-preview {
-          font-size: 0.8rem; color: #9a9a88; line-height: 1.5;
-          margin: 0.3rem 0 0.2rem; font-style: normal;
-        }
-        .cal-detail-link {
-          font-family: 'Cinzel', serif; font-size: 0.42rem; letter-spacing: 0.1em;
-          text-transform: uppercase; color: #5a7a5a; display: block; margin-top: 0.3rem;
-        }
-
-        /* Library */
-        .library-card-detail {
-          margin-top: 1.2rem; background: #0d120d; border: 1px solid #1a221a; padding: 1.2rem;
-        }
-        .library-card-header {
-          display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1rem;
-        }
-        .library-card-name {
-          font-family: 'Cinzel', serif; font-size: 1rem; font-weight: 600; display: block;
-        }
-        .library-card-count {
-          font-size: 0.7rem; color: #3a4a3a; font-style: italic; display: block; margin-top: 0.1rem;
-        }
-        .library-meanings { display: flex; flex-direction: column; gap: 0.8rem; }
-        .library-meaning-block {
-          padding: 0.7rem 0.9rem;
-          border-left: 2px solid #3a5a3a;
-          background: rgba(138,170,138,0.03);
-        }
-        .library-meaning-block.reversed {
-          border-left-color: #5a3a3a;
-          background: rgba(138,106,106,0.03);
-        }
-        .library-meaning-label {
-          font-family: 'Cinzel', serif; font-size: 0.45rem; font-weight: 600;
-          letter-spacing: 0.15em; text-transform: uppercase; color: #5a7a5a;
-          display: block; margin-bottom: 0.3rem;
-        }
-        .library-meaning-block.reversed .library-meaning-label { color: #7a5a5a; }
-        .library-meaning-text {
-          font-size: 0.88rem; font-style: italic; color: #9a9a88; line-height: 1.5; margin: 0;
-        }
-
-        .library-suits { display: flex; flex-direction: column; gap: 0.3rem; }
-        .library-suit-group { }
-        .library-suit-header {
-          width: 100%; display: flex; align-items: center; gap: 0.6rem;
-          padding: 0.6rem 0.8rem; background: #0d120d; border: 1px solid #1a221a;
-          cursor: pointer; transition: all 0.2s; font-family: inherit;
-          color: inherit;
-        }
-        .library-suit-header:hover { background: #0f150f; border-color: #2a3a2a; }
-        .library-suit-header.open { border-color: #2a3a2a; background: #0f150f; }
-        .library-suit-name {
-          font-family: 'Cinzel', serif; font-size: 0.6rem; font-weight: 600;
-          letter-spacing: 0.12em; text-transform: uppercase; color: #8aaa8a; flex: 1; text-align: left;
-        }
-        .library-suit-count {
-          font-family: 'Cinzel', serif; font-size: 0.42rem; letter-spacing: 0.08em;
-          text-transform: uppercase; color: #3a4a3a;
-        }
-        .library-suit-arrow {
-          font-size: 0.8rem; color: #3a4a3a; flex-shrink: 0; min-width: 1rem; text-align: center;
-        }
-
-        .library-suit-cards { padding-left: 0.5rem; border-left: 1px solid #1a221a; margin-left: 0.8rem; }
-        .library-browse-card { }
-        .library-browse-btn {
-          width: 100%; display: flex; align-items: center; gap: 0.5rem;
-          padding: 0.4rem 0.6rem; background: none; border: none; border-bottom: 1px solid #121812;
-          cursor: pointer; transition: all 0.15s; font-family: inherit; color: inherit;
-        }
-        .library-browse-btn:hover { background: rgba(138,170,138,0.03); }
-        .library-browse-name { font-size: 0.82rem; color: #c8c4b0; flex: 1; text-align: left; }
-        .library-browse-count {
-          font-family: 'Cinzel', serif; font-size: 0.42rem; letter-spacing: 0.08em;
-          color: #3a4a3a;
-        }
-        .library-browse-meanings { padding: 0.6rem 0.6rem 0.8rem; }
-
-        .divider { border: none; border-top: 1px solid #1a221a; margin: 1rem 0; }
-        .empty { text-align: center; padding: 3rem 2rem; font-style: italic; color: #2a3a2a; font-size: 0.9rem; line-height: 1.8; }
-
-        .moon-badge { display: inline-flex; align-items: center; gap: 0.25rem; }
-        .moon-sm .moon-symbol { font-size: 0.7rem; }
-        .moon-lg .moon-symbol { font-size: 1rem; }
-        .moon-lg .moon-name { font-family: 'Cinzel', serif; font-size: 0.5rem; letter-spacing: 0.08em; text-transform: uppercase; color: #b8a8d0; }
-
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
-
-        @media (max-width: 600px) {
-          .header { flex-direction: column; gap: 0.6rem; align-items: flex-start; }
-          .stats-summary { grid-template-columns: 1fr; }
-          .home-tiles { grid-template-columns: 1fr; }
-          .celtic-cross-grid { min-width: 400px; }
-          .page { padding: 1rem; }
-          .stats-tabs { flex-wrap: wrap; }
-        }
-      `}</style>
-
+      <main className="folio">
       {/* ════ Header ════ */}
-      <div className="header">
-        <div>
-          <p className="app-title">The Reading Room</p>
-          <p className="app-sub">a digital grimoire</p>
+      <header className={`folio-header ${view === "home" ? "" : "compact"}`}>
+        <div className="folio-fern" aria-hidden="true"><Fern /></div>
+        <div className="folio-topline">
+          <span className="h-label">Herbarium of cards · folio {roman(dayOfYear(new Date())).toLowerCase()}</span>
+          <button className="theme-toggle" onClick={() => setTheme(theme === "lamplit" ? "vellum" : "lamplit")}
+            aria-label={`Switch to ${theme === "lamplit" ? "vellum (light)" : "lamplit (dark)"} paper`}>
+            {theme === "lamplit" ? "☼ vellum" : "☾ lamplit"}
+          </button>
         </div>
-        <div style={{ display: "flex", gap: "0.6rem", alignItems: "center" }}>
-          <div className="nav">
-            <button className={`nav-btn ${view === "home" ? "active" : ""}`} onClick={() => setView("home")}>Home</button>
-            <button className={`nav-btn ${view === "journal" ? "active" : ""}`} onClick={() => setView("journal")}>Cards</button>
-            <button className={`nav-btn ${view === "daily" ? "active" : ""}`} onClick={() => { setDailyDate(toDateKey(new Date())); setView("daily"); }}>Journal</button>
-            <button className={`nav-btn ${view === "calendar" ? "active" : ""}`} onClick={() => setView("calendar")}>Calendar</button>
-            <button className={`nav-btn ${view === "library" ? "active" : ""}`} onClick={() => setView("library")}>Library</button>
-            <button className={`nav-btn ${view === "stats" ? "active" : ""}`} onClick={() => setView("stats")}>Patterns</button>
-          </div>
-          <button className="new-btn" onClick={startNew}>+ Reading</button>
-        </div>
-      </div>
+        <h1 className="folio-title">The Reading Room</h1>
+        <div className="folio-date">{longDate(new Date())}</div>
+        <div className="folio-rule" aria-hidden="true"><span className="rule-short" /><span className="rule-diamond" /><span className="rule-long" /></div>
+        <nav className="folio-nav">
+          {[["home", "Home"], ["cotd", "Card of the Day"], ["daily", "Daily Page"], ["journal", "Readings"], ["stats", "Patterns"], ["library", "Card Library"], ["calendar", "Calendar"]].map(([id, label]) => {
+            const active = view === id || (id === "journal" && view === "detail");
+            return <button key={id} className={`folio-nav-link ${active ? "active" : ""}`} aria-current={active ? "page" : undefined} onClick={() => go(id)}>{label}</button>;
+          })}
+          <button className={`folio-nav-link begin ${view === "new" ? "active" : ""}`} onClick={() => go("new")}>✦ Begin a reading</button>
+        </nav>
+      </header>
 
       {/* ════ Home ════ */}
       {view === "home" && (
-        <div className="page">
-          <div className="home-grid">
-            <div className="home-moon">
-              <span className="home-moon-symbol">{today.symbol}</span>
-              <div className="home-moon-info">
-                <p className="home-moon-name">{today.name}</p>
-                <p className="home-moon-desc">{getMoonDescription(today.name)}</p>
-              </div>
-              <span className="home-moon-date">{formatDate(Date.now())}</span>
-            </div>
+        <HerbariumHome
+          readings={readings} journal={journal} cardPairs={cardPairs}
+          onLog={logCardOfDay} onUpdateNotes={updateReadingNotes} onTodayText={saveTodayText}
+          onOpenReading={r => { setSelectedReading(r); setView("detail"); window.scrollTo({ top: 0 }); }}
+          onNavigate={go}
+        />
+      )}
 
-            <CardOfDay readings={readings} onQuickLog={logCardOfDay} />
-
-            <div className="home-tiles">
-              <div className="home-tile" onClick={startNew}>
-                <span className="home-tile-icon">✶</span>
-                <span className="home-tile-label">New Reading</span>
-                <span className="home-tile-sub">draw the cards</span>
-              </div>
-              <div className="home-tile" onClick={() => { setDailyDate(toDateKey(new Date())); setView("daily"); }}>
-                <span className="home-tile-icon">🕯️</span>
-                <span className="home-tile-label">Daily Journal</span>
-                <span className="home-tile-sub">{journal[toDateKey(new Date())] ? "continue writing..." : "what's on your mind?"}</span>
-              </div>
-              <div className="home-tile" onClick={() => setView("journal")}>
-                <span className="home-tile-icon">📖</span>
-                <span className="home-tile-label">Past Readings</span>
-                <span className="home-tile-sub">{readings.length} reading{readings.length !== 1 ? "s" : ""} recorded</span>
-              </div>
-              <div className="home-tile" onClick={() => setView("stats")}>
-                <span className="home-tile-icon">🔮</span>
-                <span className="home-tile-label">Patterns</span>
-                <span className="home-tile-sub">what keeps finding you</span>
-              </div>
-            </div>
-
-            {readings.length > 0 && (
-              <>
-                <p className="stat-label" style={{ marginTop: "0.5rem" }}>Recent</p>
-                {readings.slice(0, 3).map(r => (
-                  <div key={r.id} className="reading-card" onClick={() => { setSelectedReading(r); setView("detail"); }}>
-                    <p className="reading-date">
-                      <MoonBadge timestamp={r.ts} />
-                      {formatDateShort(r.ts)} · <span className="reading-spread-badge">{SPREADS[r.spread]?.label}</span>
-                    </p>
-                    {r.question ? <p className="reading-question">"{r.question}"</p> : <p className="reading-question-empty">no question asked</p>}
-                    <div className="card-preview">
-                      {r.cards.filter(c => c.card).map((c, i) => (
-                        <span key={i} className={`card-chip ${c.reversed ? "reversed" : ""}`} style={{ color: suitColor(c.card) }}>
-                          {suitSymbol(c.card)} {c.card}{c.reversed ? " ↓" : ""}
-                          {i < r.cards.filter(x => x.card).length - 1 && <span style={{ color: "#2a3a2a", margin: "0 0.15rem" }}>·</span>}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </>
-            )}
-          </div>
-        </div>
+      {view !== "home" && view !== "detail" && (
+        <h2 className="page-heading">{{ journal: "Register of readings", new: "Of a new reading", daily: "The Daily Page", calendar: "Calendar of days", library: "Card Library", stats: "Patterns" }[view]}</h2>
       )}
 
       {/* ════ Journal / Card Readings List ════ */}
@@ -1915,12 +1488,12 @@ export default function TarotJournal() {
                         <MoonBadge timestamp={r.ts} />
                         {formatDate(r.ts)} · <span className="reading-spread-badge">{SPREADS[r.spread]?.label}</span>
                       </p>
-                      {r.question ? <p className="reading-question">"{r.question}"</p> : <p className="reading-question-empty">no question asked</p>}
+                      {r.question ? <p className="reading-question">“{r.question}”</p> : <p className="reading-question-empty">no question asked</p>}
                       <div className="card-preview">
                         {r.cards.filter(c => c.card).map((c, i) => (
                           <span key={i} className={`card-chip ${c.reversed ? "reversed" : ""}`} style={{ color: suitColor(c.card) }}>
                             {suitSymbol(c.card)} {c.card}{c.reversed ? " ↓" : ""}
-                            {i < r.cards.filter(x => x.card).length - 1 && <span style={{ color: "#2a3a2a", margin: "0 0.15rem" }}>·</span>}
+                            {i < r.cards.filter(x => x.card).length - 1 && <span style={{ color: "var(--gilt)", margin: "0 0.15rem" }}>·</span>}
                           </span>
                         ))}
                       </div>
@@ -1949,8 +1522,8 @@ export default function TarotJournal() {
             <span>{SPREADS[selectedReading.spread]?.label}</span>
           </div>
           {selectedReading.question
-            ? <p className="detail-question">"{selectedReading.question}"</p>
-            : <p className="detail-question" style={{ color: "#3a4a3a" }}>no question asked</p>
+            ? <p className="detail-question">“{selectedReading.question}”</p>
+            : <p className="detail-question" style={{ color: "var(--soft)" }}>no question asked</p>
           }
           {selectedReading.tags?.length > 0 && (
             <div className="reading-tags" style={{ marginBottom: "0.5rem" }}>
@@ -2024,7 +1597,7 @@ export default function TarotJournal() {
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <span className="position-label">{pos}</span>
                       {count > 0 && (
-                        <span style={{ fontSize: "0.62rem", color: "#3a4a3a", fontStyle: "italic" }}>
+                        <span className="h-note" style={{ fontSize: "14px" }}>
                           seen {count}× {lastDate && `· last ${lastDate}`}
                         </span>
                       )}
@@ -2082,7 +1655,7 @@ export default function TarotJournal() {
             const phase = getMoonPhase(new Date(dailyDate + "T12:00:00"));
             return (
               <div className="daily-moon-block">
-                <span className="daily-moon-sym">{phase.symbol}</span>
+                <span className="daily-moon-sym"><MoonGlyph angle={moonAngle(new Date(dailyDate + "T12:00:00"))} size={44} title={phase.name} /></span>
                 <div>
                   <p className="daily-moon-text">{phase.name}</p>
                   <p className="daily-moon-desc">{getMoonDescription(phase.name)}</p>
@@ -2130,7 +1703,7 @@ export default function TarotJournal() {
               {readings.filter(r => toDateKey(new Date(r.ts)) === dailyDate).map(r => (
                 <div key={r.id} className="reading-card" style={{ marginTop: "0.4rem" }} onClick={() => { setSelectedReading(r); setView("detail"); }}>
                   <p className="reading-date"><span className="reading-spread-badge">{SPREADS[r.spread]?.label}</span></p>
-                  {r.question && <p className="reading-question" style={{ fontSize: "0.85rem" }}>"{r.question}"</p>}
+                  {r.question && <p className="reading-question" style={{ fontSize: "0.85rem" }}>“{r.question}”</p>}
                   <div className="card-preview">
                     {r.cards.filter(c => c.card).map((c, i) => (
                       <span key={i} className="card-chip" style={{ color: suitColor(c.card), fontSize: "0.72rem" }}>
@@ -2172,8 +1745,7 @@ export default function TarotJournal() {
       {view === "library" && (
         <div className="page">
           <div className="form-section">
-            <span className="form-label">Card Library</span>
-            <p style={{ fontSize: "0.8rem", color: "#3a4a3a", fontStyle: "italic", marginBottom: "1rem" }}>
+            <p className="h-note" style={{ marginBottom: "1rem" }}>
               Search any card to see its meaning — upright and reversed.
             </p>
             <LibrarySearch readings={readings} getCardHistory={getCardHistory} />
@@ -2220,7 +1792,7 @@ export default function TarotJournal() {
                   <p className="stat-label">Suit Distribution</p>
                   <div className="suit-dist">
                     {Object.entries(suitDistribution).map(([suit, count]) => {
-                      const colors = { Major: "#b8a8d0", Wands: "#c9a84c", Cups: "#7a9cc4", Swords: "#a8c4b8", Pentacles: "#9ab87a" };
+                      const colors = SUIT_COLORS;
                       const syms = { Major: "✶", Wands: "🜂", Cups: "🜄", Swords: "🜁", Pentacles: "🜃" };
                       return (
                         <div key={suit} className="suit-dist-item">
@@ -2267,7 +1839,7 @@ export default function TarotJournal() {
               {statsTab === "pairs" && (
                 <>
                   <p className="stat-label">Cards that keep finding each other</p>
-                  <p style={{ fontSize: "0.75rem", color: "#3a4a3a", fontStyle: "italic", marginBottom: "1rem" }}>
+                  <p className="h-note" style={{ marginBottom: "1rem" }}>
                     Pairs that appeared together in 2 or more readings
                   </p>
                   {cardPairs.length === 0 ? (
@@ -2299,7 +1871,7 @@ export default function TarotJournal() {
               {statsTab === "timeline" && (
                 <>
                   <p className="stat-label">Your readings over time</p>
-                  <p style={{ fontSize: "0.75rem", color: "#3a4a3a", fontStyle: "italic", marginBottom: "0.5rem" }}>
+                  <p className="h-note" style={{ marginBottom: "0.5rem" }}>
                     Suit colors show what energy dominated each month. Top card listed below.
                   </p>
                   <CardTimeline readings={readings} />
@@ -2308,15 +1880,15 @@ export default function TarotJournal() {
 
                   <div className="suit-dist" style={{ marginTop: "0.5rem" }}>
                     {[
-                      { suit: "Major", color: "#b8a8d0", sym: "✶" },
-                      { suit: "Wands", color: "#c9a84c", sym: "🜂" },
-                      { suit: "Cups", color: "#7a9cc4", sym: "🜄" },
-                      { suit: "Swords", color: "#a8c4b8", sym: "🜁" },
-                      { suit: "Pentacles", color: "#9ab87a", sym: "🜃" },
+                      { suit: "Major", color: SUIT_COLORS.Major, sym: "✶" },
+                      { suit: "Wands", color: SUIT_COLORS.Wands, sym: "🜂" },
+                      { suit: "Cups", color: SUIT_COLORS.Cups, sym: "🜄" },
+                      { suit: "Swords", color: SUIT_COLORS.Swords, sym: "🜁" },
+                      { suit: "Pentacles", color: SUIT_COLORS.Pentacles, sym: "🜃" },
                     ].map(s => (
                       <div key={s.suit} style={{ display: "flex", alignItems: "center", gap: "0.3rem" }}>
                         <span style={{ color: s.color, fontSize: "0.7rem" }}>{s.sym}</span>
-                        <span style={{ fontFamily: "'Cinzel', serif", fontSize: "0.38rem", letterSpacing: "0.08em", textTransform: "uppercase", color: "#3a4a3a" }}>{s.suit}</span>
+                        <span className="h-label sm" style={{ color: "var(--soft)" }}>{s.suit}</span>
                       </div>
                     ))}
                   </div>
@@ -2327,21 +1899,17 @@ export default function TarotJournal() {
               {statsTab === "moons" && (
                 <>
                   <p className="stat-label">When you read</p>
-                  <p style={{ fontSize: "0.75rem", color: "#3a4a3a", fontStyle: "italic", marginBottom: "1rem" }}>
+                  <p className="h-note" style={{ marginBottom: "1rem" }}>
                     Which moon phases draw you to the cards
                   </p>
                   {moonDist.length > 0 && (
                     <div className="moon-dist-list">
                       {moonDist.map(([phase, count]) => {
                         const max = moonDist[0]?.[1] || 1;
-                        const sym = getMoonPhase(new Date()).name === phase ? getMoonPhase(new Date()).symbol :
-                          ["🌑","🌒","🌓","🌔","🌕","🌖","🌗","🌘"][
-                            ["New Moon","Waxing Crescent","First Quarter","Waxing Gibbous","Full Moon","Waning Gibbous","Last Quarter","Waning Crescent"].indexOf(phase)
-                          ] || "🌑";
                         return (
                           <div key={phase} className="moon-dist-row">
                             <div className="moon-dist-phase">
-                              <span>{sym}</span>
+                              <MoonGlyph phase={phase} size={16} />
                               <span className="moon-dist-phase-name">{phase}</span>
                             </div>
                             <div className="moon-dist-bar-wrap">
@@ -2382,6 +1950,7 @@ export default function TarotJournal() {
           )}
         </div>
       )}
+      </main>
     </div>
   );
 }
