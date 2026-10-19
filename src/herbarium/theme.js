@@ -31,6 +31,9 @@ export function themeStyle(theme, texture = 1) {
   return { style, paper: v.paper };
 }
 
+// Plain colours, for drawings rendered outside the page (e.g. as <img>)
+export const palette = theme => theme === "lamplit" ? LAMPLIT : VELLUM;
+
 export function initialTheme() {
   try {
     const saved = localStorage.getItem("rr-theme");
