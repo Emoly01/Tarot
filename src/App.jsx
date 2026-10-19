@@ -3,7 +3,8 @@ import "./grimoire.css";
 import { moonPhaseOfDay, moonAngle, litFraction, isWaxing, nextFullMoon, nextSabbat, seasonStart, dayOfYear,
   numberWords, roman, longDate, ordinalDate, weekdayDate, dotDate, dotDayMonth, weekdayName, daysBetween } from "./herbarium/moon.js";
 import { herbFor } from "./herbarium/herbs.js";
-import { Fern, SuitPlate, CardBack, Tally, Wheel, MoonBig, MoonGlyph } from "./herbarium/art.jsx";
+import { cardNamed, cardSrc } from "./herbarium/deck.js";
+import { Fern, CardBack, Tally, Wheel, MoonBig, MoonGlyph } from "./herbarium/art.jsx";
 import { themeStyle, initialTheme } from "./herbarium/theme.js";
 const CardLibrary = lazy(() => import("./herbarium/Library.jsx"));
 
@@ -476,7 +477,7 @@ function LabelRow({ label, children, script }) {
   );
 }
 
-function HerbariumHome({ readings, journal, cardPairs, onLog, onUpdateNotes, onTodayText, onOpenReading, onNavigate }) {
+function HerbariumHome({ theme, readings, journal, cardPairs, onLog, onUpdateNotes, onTodayText, onOpenReading, onNavigate }) {
   const now = new Date();
   const todayKey = toDateKey(now);
   const [stored, setStored] = useState(() => loadCotd(todayKey));
@@ -496,7 +497,7 @@ function HerbariumHome({ readings, journal, cardPairs, onLog, onUpdateNotes, onT
   const revealed = cotd.revealed || !!logged;
   const faceDown = logged && !cotd.revealed ? false : cotd.faceDown;
   const musing = logged ? logged.notes || "" : cotd.musing;
-  const herb = herbFor(card);
+  const herb = herbFor(card), plate = cardNamed(card);
   const meanings = CARD_MEANINGS[card];
   const numeral = cardNumeral(card);
 
@@ -558,7 +559,7 @@ function HerbariumHome({ readings, journal, cardPairs, onLog, onUpdateNotes, onT
                 <div className="h-face">
                   <div className="h-face-frame">
                     <div className="h-face-numeral">{numeral}</div>
-                    <div className="h-face-art"><SuitPlate suit={suitOf(card)} /></div>
+                    <div className="h-face-art">{plate && <img src={cardSrc(plate, theme)} alt="" />}</div>
                     <div className="h-face-name">{card}</div>
                     {herb && <div className="h-face-latin">{herb.latin}</div>}
                   </div>
@@ -1298,7 +1299,7 @@ export default function TarotJournal() {
       {/* ════ Home ════ */}
       {view === "home" && (
         <HerbariumHome
-          readings={readings} journal={journal} cardPairs={cardPairs}
+          theme={theme} readings={readings} journal={journal} cardPairs={cardPairs}
           onLog={logCardOfDay} onUpdateNotes={updateReadingNotes} onTodayText={saveTodayText}
           onOpenReading={r => { setSelectedReading(r); setView("detail"); window.scrollTo({ top: 0 }); }}
           onNavigate={go}

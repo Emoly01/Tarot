@@ -1,40 +1,11 @@
-import { useState, useRef, useMemo } from "react";
-import { makeHerbCards } from "./cards.js";
-import { palette } from "./theme.js";
+import { useState, useRef } from "react";
+import { cards, plates, cardSrc } from "./deck.js";
 import { numberWords } from "./moon.js";
 
 // ══════════════════════════════════════════════════════════════
 //  The Card Library: one specimen under the glass, then every
-//  card pressed onto its plate. The plates are drawn once as SVG
-//  strings and inked per paper into cached <img> sources.
+//  card pressed onto its plate (Major Arcana and the four suits).
 // ══════════════════════════════════════════════════════════════
-
-const kebab = k => k.replace(/[A-Z]/g, m => "-" + m.toLowerCase());
-const esc = v => String(v).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-const strH = (tag, props, ...kids) => {
-  let a = "";
-  for (const k in props || {}) {
-    const v = props[k];
-    if (k === "key" || v == null) continue;
-    if (k === "style") a += ' style="' + esc(Object.keys(v).map(x => kebab(x) + ":" + v[x]).join(";")) + '"';
-    else a += " " + (k === "strokeWidth" ? "stroke-width" : k) + '="' + esc(v) + '"';
-  }
-  return "<" + tag + a + ">" + kids.flat(Infinity).filter(x => x != null && x !== false).join("") + "</" + tag + ">";
-};
-
-const TOKENS = ["ink", "ox", "gilt", "verd", "card", "soft", "wash"];
-let deck = null;
-const getDeck = () => deck || (deck = makeHerbCards(strH));
-const srcCache = {};
-
-function cardSrc(c, theme) {
-  const ck = theme + c.i;
-  if (srcCache[ck]) return srcCache[ck];
-  const v = palette(theme);
-  let svg = c.art.replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" ').replace(">", ">" + getDeck().defs);
-  TOKENS.forEach(t => { svg = svg.split("var(--" + t + ")").join(v[t]); });
-  return (srcCache[ck] = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg));
-}
 
 const drawnTimes = n => n === 0 ? "not yet" : n === 1 ? "once" : n === 2 ? "twice" : `${numberWords(n)} times`;
 
@@ -49,7 +20,6 @@ function SpecRow({ label, children, italic }) {
 }
 
 export default function CardLibrary({ theme, meaningOf, countOf }) {
-  const { cards, plates } = useMemo(getDeck, []);
   const [sel, setSel] = useState(17);
   const specRef = useRef(null);
   const n = cards.length, c = cards[sel];

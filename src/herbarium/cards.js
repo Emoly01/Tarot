@@ -406,17 +406,19 @@ const ROM = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
 const WORD = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];
 const STAGE = {Page: 'Seedling', Knight: 'In bud, leaning', Queen: 'In flower', King: 'In seed, with its root'};
 const cards = [];
-MAJ.forEach(([num, name, herb, latin, fn], i) => cards.push({i: cards.length, num, name, herb, latin, folk: '', arcana: 'Major Arcana', countLabel: 'Trump', counted: 'No. ' + i + ' of the twenty-two', major: true, art: art(fn, null, cards.length + 1)}));
+MAJ.forEach(([num, name, herb, latin, fn], i) => cards.push({i: cards.length, num, name, herb, latin, folk: '', arcana: 'Major Arcana', countLabel: 'Trump', counted: 'No. ' + i + ' of the twenty-two', major: true, draw: [fn, null, cards.length + 1]}));
 SUITS.forEach(s => {
   for (let r = 1; r <= 14; r++) {
     const court = ['Page', 'Knight', 'Queen', 'King'][r - 11], id = cards.length + 1;
     const c = {i: cards.length, herb: s.herb, latin: s.latin, folk: s.folk, arcana: 'Suit of ' + s.name, major: false};
-    if (r === 1) Object.assign(c, {num: 'Ace', name: 'Ace of ' + s.name, countLabel: 'Counted', counted: 'One ' + s.one + ', the root below the soil', art: art(s.ace, null, id)});
-    else if (r <= 10) Object.assign(c, {num: ROM[r], name: WORD[r] + ' of ' + s.name, countLabel: 'Counted', counted: WORD[r] + ' ' + s.many, art: art(s.pip, r, id)});
-    else Object.assign(c, {num: court, name: court + ' of ' + s.name, countLabel: 'Stage', counted: STAGE[court], art: art(s.court, court, id)});
+    if (r === 1) Object.assign(c, {num: 'Ace', name: 'Ace of ' + s.name, countLabel: 'Counted', counted: 'One ' + s.one + ', the root below the soil', draw: [s.ace, null, id]});
+    else if (r <= 10) Object.assign(c, {num: ROM[r], name: WORD[r] + ' of ' + s.name, countLabel: 'Counted', counted: WORD[r] + ' ' + s.many, draw: [s.pip, r, id]});
+    else Object.assign(c, {num: court, name: court + ' of ' + s.name, countLabel: 'Stage', counted: STAGE[court], draw: [s.court, court, id]});
     cards.push(c);
   }
 });
+// Each plate is drawn on first look; its seed is its own, so order never matters
+cards.forEach(c => { const [fn, arg, id] = c.draw; let svg = null; delete c.draw; Object.defineProperty(c, 'art', {enumerable: true, get: () => svg || (svg = art(fn, arg, id))}); });
 const plates = [{eyebrow: 'Plate I', title: 'The Major Arcana', herb: 'Twenty-two herbs', latin: '', folk: '', note: 'One herb for each trump, gathered from hedgerow, wood and wall.', idx: cards.slice(0, 22).map(c => c.i)}]
   .concat(SUITS.map((s, k) => ({eyebrow: 'Plate ' + ['II', 'III', 'IV', 'V'][k], title: s.name, herb: s.herb, latin: s.latin, folk: s.folk, note: s.note + ' Aces show the root; courts are the plant growing up.', idx: cards.slice(22 + k * 14, 36 + k * 14).map(c => c.i)})));
 const defs = h('svg', {width: 0, height: 0, style: {position: 'absolute'}, 'aria-hidden': true},
