@@ -432,38 +432,62 @@ textarea::placeholder, input::placeholder { color: currentColor; opacity: .45; }
 .cal-detail-preview { font-size: 16px; line-height: 1.5; margin: .2rem 0; }
 .cal-detail-link { font-family: 'IM Fell English', serif; font-style: italic; font-size: 16px; color: var(--ox); display: block; margin-top: .2rem; }
 
-/* Library */
-.library-card-detail { margin-top: 1.4rem; background-color: var(--mount); background-image: var(--grain); box-shadow: var(--lift); padding: 22px 26px; }
-.library-card-header { display: flex; align-items: center; gap: 1.2rem; margin-bottom: 1.2rem; }
-.library-plate { width: 92px; height: 134px; flex: none; display: flex; justify-content: center; }
-.library-card-numeral { font-family: 'IM Fell English', serif; font-size: 22px; color: var(--ox); display: block; line-height: 1; }
-.library-card-name { font-family: 'IM Fell English SC', serif; font-size: 30px; letter-spacing: .06em; display: block; line-height: 1.15; }
-.library-card-count { font-size: 15px; color: var(--soft); font-style: italic; display: block; margin-top: .15rem; }
-.herb-line { display: block; font-family: 'IM Fell English', serif; font-size: 18px; margin: .15rem 0 .4rem; }
-.herb-line-label { font-family: 'IM Fell English SC', serif; font-size: 14px; letter-spacing: .07em; color: var(--verd); margin-right: .3rem; }
+/* ── Card Library ────────────────────────────────────────────── */
+.lib-hero {
+  margin-top: clamp(36px, 6vw, 64px); display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: clamp(36px, 5vw, 64px); align-items: start; scroll-margin-top: 24px;
+}
+.lib-label-col { display: flex; flex-direction: column; gap: 24px; padding-top: clamp(0px, 3vw, 40px); }
+.lib-step { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; border-top: 1px solid var(--rule); padding-top: 12px; }
+.lib-step-btn {
+  background: none; border: 0; padding: 4px 0; cursor: pointer;
+  font-family: 'IM Fell English', serif; font-style: italic; font-size: 19px; color: var(--ox);
+}
+.lib-step-btn:hover { color: var(--ink); }
+
+/* A card face, sized in container units so it scales with its slot */
+.lib-cq { container-type: inline-size; width: 100%; }
+.lib-card {
+  width: 100%; aspect-ratio: 3/5; background-color: var(--card); background-image: var(--grain);
+  border: 1px solid var(--gilt); border-radius: 3cqw; padding: 4cqw; box-shadow: 0 1px 2px rgba(51,37,26,.2);
+}
+.lib-card-frame {
+  height: 100%; border: 1px solid var(--gilt); border-radius: 2cqw; display: flex; flex-direction: column;
+  align-items: center; padding: 5cqw 4cqw 6cqw; color: var(--ink);
+}
+.lib-card-num { font-family: 'IM Fell English', serif; font-size: 12cqw; line-height: 1; }
+.lib-card-art { flex: 1; width: 100%; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 2cqw 0; }
+.lib-card-art img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.lib-card-name { font-family: 'IM Fell English SC', serif; font-size: 9cqw; letter-spacing: .04em; line-height: 1.05; text-align: center; text-wrap: balance; }
+.lib-card-latin { font-family: 'IM Fell English', serif; font-style: italic; font-size: 4.4cqw; color: var(--soft); text-align: center; }
+.lib-card-lg { border-radius: 1.6cqw; padding: 2.4cqw; box-shadow: 0 1px 2px rgba(51,37,26,.18); }
+.lib-card-lg .lib-card-frame { border-radius: 1cqw; padding: 4cqw 4cqw 5cqw; }
+.lib-card-lg .lib-card-num { font-size: 9cqw; }
+.lib-card-lg .lib-card-name { font-size: 6.6cqw; letter-spacing: .08em; line-height: 1.1; }
+
+/* Plates: one per arcana or suit */
+.lib-plate { margin-top: clamp(56px, 8vw, 96px); border-top: 1px solid var(--ink); padding-top: 22px; display: flex; flex-direction: column; gap: 28px; }
+.lib-plate-intro { display: flex; flex-direction: column; gap: 4px; max-width: 300px; }
+.lib-plate-title { margin: 0; font-family: 'IM Fell English', serif; font-weight: 400; font-size: clamp(38px, 4.6vw, 52px); line-height: 1; }
+.lib-plate-herb { font-family: 'IM Fell English', serif; font-size: 21px; margin-top: 8px; }
+.lib-plate-sub { font-family: 'IM Fell English', serif; font-style: italic; font-size: 18px; color: var(--soft); }
+.lib-plate-note { margin: 10px 0 0; font-size: 16px; color: var(--soft); text-wrap: pretty; }
+.lib-plate-cards { min-width: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 24px 18px; }
+.lib-pick {
+  background: none; border: 0; padding: 0; cursor: pointer; container-type: inline-size; width: 100%;
+  outline: 1px solid transparent; outline-offset: 5px; border-radius: 2px; transition: transform .25s;
+}
+.lib-pick:hover { transform: translateY(-3px) rotate(-.6deg); }
+.lib-pick.on { outline: 1.5px solid var(--ox); }
+.lib-pick:focus-visible { outline: 1px dotted var(--gilt); }
+.lib-pick.on:focus-visible { outline: 1.5px dotted var(--ox); }
+
 .library-meanings { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 18px; }
 .library-meaning-block { border-top: 1px solid var(--verd); padding-top: .5rem; }
 .library-meaning-block.reversed { border-top-color: var(--ox); }
 .library-meaning-block.reversed .library-meaning-label { color: var(--ox); }
 .library-meaning-text { font-family: 'IM Fell English', serif; font-size: 20px; line-height: 1.3; margin: 0; }
-.library-suits { display: flex; flex-direction: column; border-top: 1px solid var(--ink); }
-.library-suit-header {
-  width: 100%; display: flex; align-items: baseline; gap: .8rem; padding: 12px 2px; cursor: pointer;
-  background: none; border: 0; border-bottom: 1px solid var(--rule); transition: background-color .2s;
-}
-.library-suit-header:hover, .library-suit-header.open { background-color: color-mix(in srgb, var(--mount) 60%, transparent); }
-.library-suit-name { font-family: 'IM Fell English SC', serif; font-size: 20px; letter-spacing: .06em; flex: 1; text-align: left; color: var(--suit-color); }
-.library-suit-count { font-family: 'IM Fell English', serif; font-style: italic; font-size: 16px; color: var(--soft); }
-.library-suit-arrow { font-family: 'IM Fell English', serif; font-size: 20px; color: var(--gilt); flex-shrink: 0; min-width: 1rem; text-align: center; }
-.library-suit-cards { padding-left: .8rem; margin-left: .6rem; border-left: 1px solid var(--gilt); }
-.library-browse-btn {
-  width: 100%; display: flex; align-items: baseline; gap: .6rem; padding: 8px 4px; cursor: pointer;
-  background: none; border: 0; border-bottom: 1px solid var(--rule); transition: background-color .15s;
-}
-.library-browse-btn:hover { background-color: color-mix(in srgb, var(--mount) 60%, transparent); }
-.library-browse-name { font-family: 'IM Fell English', serif; font-size: 19px; flex: 1; text-align: left; }
-.library-browse-count { font-family: 'IM Fell English', serif; font-size: 16px; color: var(--soft); }
-.library-browse-meanings { padding: .7rem .2rem 1rem; }
 
 /* Moons */
 .moon-badge { display: inline-flex; align-items: center; gap: .35rem; }
@@ -481,5 +505,5 @@ textarea::placeholder, input::placeholder { color: currentColor; opacity: .45; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .h-flip-inner, .page, .reading-card { transition: none; animation: none; }
+  .h-flip-inner, .page, .reading-card, .lib-pick { transition: none; animation: none; }
 }

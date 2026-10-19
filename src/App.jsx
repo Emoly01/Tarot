@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from "react";
 import "./grimoire.css";
 import { moonPhaseOfDay, moonAngle, litFraction, isWaxing, nextFullMoon, nextSabbat, seasonStart, dayOfYear,
   numberWords, roman, longDate, ordinalDate, weekdayDate, dotDate, dotDayMonth, weekdayName, daysBetween } from "./herbarium/moon.js";
 import { herbFor } from "./herbarium/herbs.js";
 import { Fern, SuitPlate, CardBack, Tally, Wheel, MoonBig, MoonGlyph } from "./herbarium/art.jsx";
 import { themeStyle, initialTheme } from "./herbarium/theme.js";
+const CardLibrary = lazy(() => import("./herbarium/Library.jsx"));
 
 // ══════════════════════════════════════════════════════════════
 //  THE READING ROOM — A Digital Grimoire
@@ -1036,154 +1037,6 @@ function GrimoireCalendar({ journal, readings, onSelectDate, onSelectReading }) 
   );
 }
 
-// ── Paired herb, as written on a specimen label ─────────────
-function HerbLine({ card }) {
-  const herb = herbFor(card);
-  if (!herb) return null;
-  return (
-    <span className="herb-line">
-      <span className="herb-line-label">Paired herb</span> {herb.common}, <i>{herb.latin}</i> {herb.authority}
-    </span>
-  );
-}
-
-// ── Library: Search Component ────────────────────────────────
-function LibrarySearch({ readings, getCardHistory }) {
-  const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState(null);
-
-  const matches = query.length > 0
-    ? ALL_CARDS.filter(c => c.toLowerCase().includes(query.toLowerCase())).slice(0, 8)
-    : [];
-
-  const selectCard = (card) => {
-    setSelected(card);
-    setQuery(card);
-  };
-
-  const count = selected ? getCardHistory(selected) : 0;
-
-  return (
-    <div>
-      <div style={{ position: "relative" }}>
-        <input
-          className="search-input"
-          style={{ width: "100%" }}
-          value={query}
-          placeholder="Type a card name..."
-          onChange={e => { setQuery(e.target.value); setSelected(null); }}
-          onFocus={() => setSelected(null)}
-          autoComplete="off"
-        />
-        {!selected && query.length > 0 && matches.length > 0 && (
-          <div className="card-dropdown">
-            {matches.map(c => (
-              <div key={c} className="card-option" onMouseDown={() => selectCard(c)}>
-                <span style={{ color: suitColor(c), marginRight: "0.4rem", fontSize: "0.8rem" }}>{suitSymbol(c)}</span>
-                {c}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {selected && CARD_MEANINGS[selected] && (
-        <div className="library-card-detail" style={{ animation: "fadeIn 0.3s ease" }}>
-          <div className="library-card-header" style={{ "--suit-color": suitColor(selected) }}>
-            <div className="library-plate"><SuitPlate suit={suitOf(selected)} /></div>
-            <div>
-              <span className="library-card-numeral">{cardNumeral(selected)}</span>
-              <span className="library-card-name">{selected}</span>
-              <HerbLine card={selected} />
-              {count > 0 && <span className="library-card-count">appeared {count}× in your readings</span>}
-            </div>
-          </div>
-          <div className="library-meanings">
-            <div className="library-meaning-block">
-              <span className="library-meaning-label">Upright</span>
-              <p className="library-meaning-text">{CARD_MEANINGS[selected].up}</p>
-            </div>
-            <div className="library-meaning-block reversed">
-              <span className="library-meaning-label">Reversed</span>
-              <p className="library-meaning-text">{CARD_MEANINGS[selected].rev}</p>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Library: Browse by Suit ──────────────────────────────────
-function LibraryBrowse({ readings, getCardHistory }) {
-  const [openSuit, setOpenSuit] = useState(null);
-  const [expandedCard, setExpandedCard] = useState(null);
-
-  const suits = [
-    { name: "Major Arcana", cards: MAJOR_ARCANA, color: SUIT_COLORS.Major, sym: "✶" },
-    { name: "Wands", cards: MINOR_ARCANA.filter(c => c.includes("Wands")), color: SUIT_COLORS.Wands, sym: "🜂" },
-    { name: "Cups", cards: MINOR_ARCANA.filter(c => c.includes("Cups")), color: SUIT_COLORS.Cups, sym: "🜄" },
-    { name: "Swords", cards: MINOR_ARCANA.filter(c => c.includes("Swords")), color: SUIT_COLORS.Swords, sym: "🜁" },
-    { name: "Pentacles", cards: MINOR_ARCANA.filter(c => c.includes("Pentacles")), color: SUIT_COLORS.Pentacles, sym: "🜃" },
-  ];
-
-  return (
-    <div className="library-suits">
-      {suits.map(suit => (
-        <div key={suit.name} className="library-suit-group">
-          <button
-            className={`library-suit-header ${openSuit === suit.name ? "open" : ""}`}
-            style={{ "--suit-color": suit.color }}
-            onClick={() => { setOpenSuit(openSuit === suit.name ? null : suit.name); setExpandedCard(null); }}
-          >
-            <span style={{ color: suit.color, fontSize: "0.9rem" }}>{suit.sym}</span>
-            <span className="library-suit-name">{suit.name}</span>
-            <span className="library-suit-count">{suit.cards.length} cards</span>
-            <span className="library-suit-arrow">{openSuit === suit.name ? "−" : "+"}</span>
-          </button>
-
-          {openSuit === suit.name && (
-            <div className="library-suit-cards" style={{ animation: "fadeIn 0.2s ease" }}>
-              {suit.cards.map(card => {
-                const isExpanded = expandedCard === card;
-                const meaning = CARD_MEANINGS[card];
-                const count = getCardHistory(card);
-                return (
-                  <div key={card} className="library-browse-card">
-                    <button
-                      className="library-browse-btn"
-                      style={{ "--suit-color": suit.color }}
-                      onClick={() => setExpandedCard(isExpanded ? null : card)}
-                    >
-                      <span style={{ color: suit.color }}>{suitSymbol(card)}</span>
-                      <span className="library-browse-name">{card}</span>
-                      {count > 0 && <span className="library-browse-count">{count}×</span>}
-                      <span className="library-suit-arrow">{isExpanded ? "−" : "+"}</span>
-                    </button>
-                    {isExpanded && meaning && (
-                      <div className="library-browse-meanings" style={{ animation: "fadeIn 0.2s ease" }}>
-                        <HerbLine card={card} />
-                        <div className="library-meaning-block">
-                          <span className="library-meaning-label">Upright</span>
-                          <p className="library-meaning-text">{meaning.up}</p>
-                        </div>
-                        <div className="library-meaning-block reversed">
-                          <span className="library-meaning-label">Reversed</span>
-                          <p className="library-meaning-text">{meaning.rev}</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // ══════════════════════════════════════════════════════════════
 //  MAIN COMPONENT
 // ══════════════════════════════════════════════════════════════
@@ -1421,17 +1274,17 @@ export default function TarotJournal() {
 
       <main className="folio">
       {/* ════ Header ════ */}
-      <header className={`folio-header ${view === "home" ? "" : "compact"}`}>
-        <div className="folio-fern" aria-hidden="true"><Fern /></div>
+      <header className={`folio-header ${view === "home" || view === "library" ? "" : "compact"}`}>
+        {view !== "library" && <div className="folio-fern" aria-hidden="true"><Fern /></div>}
         <div className="folio-topline">
-          <span className="h-label">Herbarium of cards · folio {roman(dayOfYear(new Date())).toLowerCase()}</span>
+          <span className="h-label">Herbarium of cards · {view === "library" ? "the whole collection" : `folio ${roman(dayOfYear(new Date())).toLowerCase()}`}</span>
           <button className="theme-toggle" onClick={() => setTheme(theme === "lamplit" ? "vellum" : "lamplit")}
             aria-label={`Switch to ${theme === "lamplit" ? "vellum (light)" : "lamplit (dark)"} paper`}>
             {theme === "lamplit" ? "☼ vellum" : "☾ lamplit"}
           </button>
         </div>
-        <h1 className="folio-title">The Reading Room</h1>
-        <div className="folio-date">{longDate(new Date())}</div>
+        <h1 className="folio-title">{view === "library" ? "The Card Library" : "The Reading Room"}</h1>
+        <div className="folio-date">{view === "library" ? "Seventy-eight specimens, each pressed with its herb" : longDate(new Date())}</div>
         <div className="folio-rule" aria-hidden="true"><span className="rule-short" /><span className="rule-diamond" /><span className="rule-long" /></div>
         <nav className="folio-nav">
           {[["home", "Home"], ["cotd", "Card of the Day"], ["daily", "Daily Page"], ["journal", "Readings"], ["stats", "Patterns"], ["library", "Card Library"], ["calendar", "Calendar"]].map(([id, label]) => {
@@ -1452,8 +1305,8 @@ export default function TarotJournal() {
         />
       )}
 
-      {view !== "home" && view !== "detail" && (
-        <h2 className="page-heading">{{ journal: "Register of readings", new: "Of a new reading", daily: "The Daily Page", calendar: "Calendar of days", library: "Card Library", stats: "Patterns" }[view]}</h2>
+      {view !== "home" && view !== "detail" && view !== "library" && (
+        <h2 className="page-heading">{{ journal: "Register of readings", new: "Of a new reading", daily: "The Daily Page", calendar: "Calendar of days", stats: "Patterns" }[view]}</h2>
       )}
 
       {/* ════ Journal / Card Readings List ════ */}
@@ -1743,20 +1596,9 @@ export default function TarotJournal() {
 
       {/* ════ Card Library ════ */}
       {view === "library" && (
-        <div className="page">
-          <div className="form-section">
-            <p className="h-note" style={{ marginBottom: "1rem" }}>
-              Search any card to see its meaning — upright and reversed.
-            </p>
-            <LibrarySearch readings={readings} getCardHistory={getCardHistory} />
-          </div>
-
-          {/* Browse by suit */}
-          <div className="form-section" style={{ marginTop: "1.5rem" }}>
-            <span className="form-label">Browse by Suit</span>
-            <LibraryBrowse readings={readings} getCardHistory={getCardHistory} />
-          </div>
-        </div>
+        <Suspense fallback={<p className="h-note" style={{ marginTop: "3rem" }}>Pressing the specimens…</p>}>
+          <CardLibrary theme={theme} meaningOf={c => CARD_MEANINGS[c]} countOf={getCardHistory} />
+        </Suspense>
       )}
 
       {/* ════ Patterns ════ */}
