@@ -6,6 +6,7 @@ import { herbFor } from "./herbarium/herbs.js";
 import { cardNamed, cardSrc } from "./herbarium/deck.js";
 import { Fern, CardBack, Tally, Wheel, MoonBig, MoonGlyph } from "./herbarium/art.jsx";
 import { themeStyle, initialTheme } from "./herbarium/theme.js";
+import { packGrimoire, unpackGrimoire, mergeGrimoire, sendGrimoire } from "./herbarium/carry.js";
 const CardLibrary = lazy(() => import("./herbarium/Library.jsx"));
 
 // ══════════════════════════════════════════════════════════════
@@ -1146,6 +1147,32 @@ export default function TarotJournal() {
     saveJournal(updated);
   };
 
+  // ── Carrying the grimoire between devices ──────────────────
+  const [carryNote, setCarryNote] = useState("");
+  const saveCopy = async () => {
+    const how = await sendGrimoire(packGrimoire(readings, journal));
+    if (how === "cancelled") return;
+    const n = readings.length, d = Object.keys(journal).length;
+    setCarryNote(`${how === "shared" ? "Sent" : "Saved"} a copy with ${n} reading${n === 1 ? "" : "s"} and ${d} journal page${d === 1 ? "" : "s"}. Open it on your other device with "Bring a copy in".`);
+  };
+  const bringCopy = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const m = mergeGrimoire({ readings, journal }, unpackGrimoire(await file.text()));
+      saveReadings(m.readings);
+      saveJournal(m.journal);
+      const bits = [];
+      if (m.addedReadings) bits.push(`${m.addedReadings} reading${m.addedReadings === 1 ? "" : "s"}`);
+      if (m.addedDays) bits.push(`${m.addedDays} journal page${m.addedDays === 1 ? "" : "s"}`);
+      if (m.wovenDays) bits.push(`${m.wovenDays} page${m.wovenDays === 1 ? "" : "s"} woven together`);
+      setCarryNote(bits.length ? `Brought in ${bits.join(", ")}. Nothing here was overwritten.` : "Everything in that copy was already here.");
+    } catch (err) {
+      setCarryNote(err?.message === "That file isn't a grimoire copy." ? err.message : "That file couldn't be read as a grimoire copy.");
+    }
+  };
+
   const updateReadingNotes = (id, notes) => {
     saveReadings(readings.map(r => r.id === id ? { ...r, notes } : r));
   };
@@ -1793,6 +1820,18 @@ export default function TarotJournal() {
           )}
         </div>
       )}
+      <footer className="carry">
+        <span className="h-label sm">Carry the grimoire</span>
+        <p className="h-note">This book lives in this browser only. To read it on another device, save a copy here and bring it in there.</p>
+        <div className="carry-actions">
+          <button className="cancel-btn" onClick={saveCopy} disabled={!loaded}>Save a copy</button>
+          <label className="cancel-btn carry-in">
+            Bring a copy in
+            <input type="file" accept="application/json,.json" onChange={bringCopy} />
+          </label>
+        </div>
+        {carryNote && <p className="carry-note" role="status">{carryNote}</p>}
+      </footer>
       </main>
     </div>
   );
