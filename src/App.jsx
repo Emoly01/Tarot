@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from "react";
 import "./grimoire.css";
 import { moonPhaseOfDay, moonAngle, litFraction, isWaxing, nextFullMoon, nextSabbat, seasonStart, dayOfYear,
   numberWords, roman, longDate, ordinalDate, weekdayDate, dotDate, dotDayMonth, weekdayName, daysBetween } from "./herbarium/moon.js";
@@ -7,6 +7,7 @@ import { cardNamed, cardSrc } from "./herbarium/deck.js";
 import { Fern, CardBack, Tally, Wheel, MoonBig, MoonGlyph } from "./herbarium/art.jsx";
 import { themeStyle, initialTheme } from "./herbarium/theme.js";
 import { packGrimoire, unpackGrimoire, mergeGrimoire, sendGrimoire } from "./herbarium/carry.js";
+import { syncAvailable, preload, wasSignedIn, watchAccount, signIn, signOut, connectBook, pushReadings, pushJournal } from "./herbarium/sync.js";
 const CardLibrary = lazy(() => import("./herbarium/Library.jsx"));
 
 // ══════════════════════════════════════════════════════════════
@@ -1086,13 +1087,101 @@ export default function TarotJournal() {
     setLoaded(true);
   }, []);
 
+  // ── Cloud sync ─────────────────────────────────────────────
+  // book: what this device holds right now. cloud: what was last sent to (or
+  // heard from) the cloud. pending: debounce timers, so typing doesn't write
+  // per keystroke; while one is pending, incoming snapshots for that half of
+  // the book are ignored (the write that follows brings a fresh one).
+  const book = useRef({ readings: [], journal: {} });
+  const cloud = useRef({ readings: [], journal: {} });
+  const pending = useRef({ readings: null, journal: null });
+  const [account, setAccount] = useState(null);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [syncNote, setSyncNote] = useState("");
+  const accountRef = useRef(null);
+  const watching = useRef(null);
+  useEffect(() => { book.current = { readings, journal }; }, [readings, journal]);
+
+  const keepLocal = (kind, value) => {
+    book.current = { ...book.current, [kind]: value };
+    const key = kind === "readings" ? "grimoire-readings-v2" : "grimoire-journal-v1";
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+  };
+
+  const schedulePush = (kind) => {
+    const who = accountRef.current;
+    if (!who) return;
+    clearTimeout(pending.current[kind]);
+    pending.current[kind] = setTimeout(async () => {
+      pending.current[kind] = null;
+      const before = cloud.current[kind], after = book.current[kind];
+      cloud.current = { ...cloud.current, [kind]: after };
+      try { await (kind === "readings" ? pushReadings : pushJournal)(who.uid, before, after); }
+      catch { setSyncNote("Couldn't reach the cloud just now. Your writing is safe on this device and will sync when it can."); }
+    }, 700);
+  };
+
+  const fromCloud = (part) => {
+    for (const kind of Object.keys(part)) {
+      if (pending.current[kind]) continue;
+      cloud.current = { ...cloud.current, [kind]: part[kind] };
+      keepLocal(kind, part[kind]);
+      (kind === "readings" ? setReadings : setJournal)(part[kind]);
+    }
+  };
+
+  const startWatching = () => {
+    if (!watching.current) watching.current = watchAccount((who, err) => {
+      if (err) setSyncNote("Sign-in didn't finish. Try again?");
+      accountRef.current = who;
+      setAccount(who);
+    });
+    return watching.current;
+  };
+  useEffect(() => {
+    if (wasSignedIn()) { startWatching(); return; }
+    if (!syncAvailable) return;
+    const t = setTimeout(() => { preload(); startWatching(); }, 1500);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
+    if (!account || !loaded) return;
+    let live = true, conn = null;
+    cloud.current = book.current;
+    setSyncBusy(true);
+    connectBook(account.uid, () => book.current, fromCloud)
+      .then(c => {
+        if (!live) return c.stop();
+        conn = c;
+        if (c.merged) setSyncNote("Linked. This device's book and your cloud book are now one.");
+      })
+      .catch(() => setSyncNote("Couldn't open your cloud book. Check your connection and sign in again."))
+      .finally(() => live && setSyncBusy(false));
+    return () => { live = false; conn?.stop(); };
+  }, [account?.uid, loaded]);
+
+  const join = async () => {
+    setSyncNote(""); setSyncBusy(true);
+    try { startWatching(); await signIn(); }
+    catch { setSyncNote("Sign-in didn't work. If a popup was blocked, allow it and try again."); }
+    finally { setSyncBusy(false); }
+  };
+  const leave = async () => {
+    for (const kind of ["readings", "journal"]) clearTimeout(pending.current[kind]);
+    await signOut();
+    setSyncNote("Signed out. Your book stays on this device.");
+  };
+
   const saveReadings = (updated) => {
     setReadings(updated);
-    try { localStorage.setItem("grimoire-readings-v2", JSON.stringify(updated)); } catch {}
+    keepLocal("readings", updated);
+    schedulePush("readings");
   };
   const saveJournal = (updated) => {
     setJournal(updated);
-    try { localStorage.setItem("grimoire-journal-v1", JSON.stringify(updated)); } catch {}
+    keepLocal("journal", updated);
+    schedulePush("journal");
   };
 
   useEffect(() => {
@@ -1821,8 +1910,24 @@ export default function TarotJournal() {
         </div>
       )}
       <footer className="carry">
-        <span className="h-label sm">Carry the grimoire</span>
-        <p className="h-note">This book lives in this browser only. To read it on another device, save a copy here and bring it in there.</p>
+        {syncAvailable && (
+          <div className="carry-sync">
+            <span className="h-label sm">{account ? "One book, every device" : "Keep one book"}</span>
+            {account ? (
+              <p className="h-note">Kept in sync as <b>{account.email}</b>. Anything you write here appears on every device signed in with this account.{syncBusy ? " Opening your book…" : ""}</p>
+            ) : (
+              <p className="h-note">Sign in with Google and your phone and desktop share the same book, kept safe in the cloud.</p>
+            )}
+            <div className="carry-actions">
+              {account
+                ? <button className="cancel-btn" onClick={leave}>Sign out</button>
+                : <button className="cancel-btn carry-signin" onClick={join} disabled={!loaded || syncBusy}>Sign in with Google</button>}
+            </div>
+            {syncNote && <p className="carry-note" role="status">{syncNote}</p>}
+          </div>
+        )}
+        <span className="h-label sm">{syncAvailable ? "Or carry a copy by hand" : "Carry the grimoire"}</span>
+        <p className="h-note">{syncAvailable ? "A copy is also a good backup. Save one now and then." : "This book lives in this browser only. To read it on another device, save a copy here and bring it in there."}</p>
         <div className="carry-actions">
           <button className="cancel-btn" onClick={saveCopy} disabled={!loaded}>Save a copy</button>
           <label className="cancel-btn carry-in">

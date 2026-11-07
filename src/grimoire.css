@@ -520,3 +520,7 @@ textarea::placeholder, input::placeholder { color: currentColor; opacity: .45; }
 .carry-in input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
 .carry-in:focus-within { outline: 1px dotted var(--gilt); outline-offset: 4px; }
 .carry-note { margin: .9rem auto 0; max-width: 34em; font-style: italic; color: var(--ox); font-size: 15px; }
+.carry-sync { margin-bottom: 2.2rem; }
+.carry-sync b { font-weight: 400; color: var(--ink); font-style: normal; }
+.carry-signin { color: var(--ox); border-color: var(--ox); }
+.cancel-btn:disabled { opacity: .5; cursor: default; }
