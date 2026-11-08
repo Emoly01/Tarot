@@ -183,6 +183,64 @@ textarea::placeholder, input::placeholder { color: currentColor; opacity: .45; }
 .h-reg-moon { flex: 0 0 160px; display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--soft); }
 .h-reg-theme { flex: 0 0 90px; font-family: 'IM Fell English SC', serif; font-size: 15px; letter-spacing: .1em; color: var(--verd); }
 
+/* ── The Daily Page: a leaf of the grimoire ─────────────────── */
+.leaf { max-width: 1040px; }
+.leaf-head { margin: clamp(36px, 6vw, 64px) 0 clamp(28px, 4vw, 44px); padding-bottom: 14px; border-bottom: 1px solid var(--rule); display: flex; flex-direction: column; gap: 6px; }
+.leaf-date { margin: 0; font-family: 'IM Fell English', serif; font-weight: 400; font-size: clamp(27px, 4vw, 38px); line-height: 1.15; color: var(--ink); text-wrap: balance; }
+.leaf-moon { display: flex; align-items: center; gap: 10px; font-style: italic; color: var(--soft); font-size: 17px; }
+.leaf-turn { display: flex; flex-wrap: wrap; gap: 4px 22px; margin-top: 6px; }
+.leaf-turn .h-quiet-link { padding-left: 0; }
+.leaf-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 280px); gap: clamp(32px, 5vw, 64px); align-items: start; }
+.leaf-main, .leaf-side { display: flex; flex-direction: column; gap: 34px; min-width: 0; }
+.leaf section { display: flex; flex-direction: column; gap: 8px; }
+
+.leaf-rubric { border-left: 2px solid var(--ox); padding: 2px 0 2px 18px; }
+.leaf-rubric-head { font-family: 'IM Fell English SC', serif; font-size: 15px; letter-spacing: .1em; color: var(--ox); }
+.leaf-rubric-q { margin: 0; font-family: 'IM Fell English', serif; font-style: italic; font-size: clamp(22px, 2.6vw, 27px); line-height: 1.35; color: var(--ox); text-wrap: pretty; }
+.leaf-rubric .h-quiet-link { padding-left: 0; }
+
+.leaf-lined { min-height: 324px; resize: vertical; }
+.leaf-written { font-size: 19px; line-height: 1.6; }
+.leaf-written + .h-quiet-link { padding-left: 0; }
+.leaf-kept { font-family: 'Cedarville Cursive', cursive; font-size: 18px; color: var(--verd); }
+.leaf-weather .mood-picker { margin-bottom: 0; }
+.h-reg-q { flex: 1 1 100%; font-style: italic; color: var(--soft); font-size: 15px; }
+
+.leaf-card { gap: 14px !important; }
+.leaf-mount { position: relative; width: min(100%, 220px); aspect-ratio: 3/5; padding: 12px; background-color: var(--mount); background-image: var(--grain); box-shadow: var(--lift); transform: rotate(1.2deg); }
+.leaf-mount img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.leaf-mount .h-tape { width: 72px; height: 20px; }
+.leaf-mount-back { padding: 10px; }
+.leaf-mount-back > * { width: 100%; height: 100%; border-radius: 4px; overflow: hidden; }
+.leaf-card-text { display: flex; flex-direction: column; gap: 4px; }
+.leaf-card-text .h-quiet-link { padding-left: 0; }
+.leaf-card-name { font-family: 'IM Fell English SC', serif; font-size: 21px; letter-spacing: .08em; line-height: 1.15; }
+.leaf-card-kw { font-size: 15px; color: var(--soft); text-wrap: pretty; }
+.leaf-card-kw span { font-family: 'IM Fell English SC', serif; letter-spacing: .08em; color: var(--verd); margin-right: 4px; }
+.leaf-no-card { padding: 18px 0; border-top: 1px dashed var(--rule); border-bottom: 1px dashed var(--rule); }
+
+.leaf-echoes { gap: 0 !important; }
+.leaf-echoes > .h-label { margin-bottom: 8px; }
+.leaf-echo { padding: 14px 0; border-top: 1px solid var(--rule); display: flex; flex-direction: column; gap: 6px; }
+.leaf-echo-head { display: flex; align-items: center; gap: 8px; font-family: 'IM Fell English SC', serif; font-size: 14px; letter-spacing: .08em; color: var(--verd); }
+.leaf-echo-text { margin: 0; font-family: 'Cedarville Cursive', cursive; font-size: 19px; line-height: 1.45; color: var(--ink); white-space: pre-wrap; text-wrap: pretty; }
+.leaf-echo .h-quiet-link { padding-left: 0; font-size: 14px; }
+
+/* On narrow paper the margin folds into the page: card, question, page, weather, echoes, register */
+@media (max-width: 760px) {
+  .leaf-body { display: flex; flex-direction: column; align-items: stretch; gap: 30px; }
+  .leaf-main, .leaf-side { display: contents; }
+  .leaf-card { order: 1; flex-direction: row !important; align-items: flex-start; gap: 18px !important; }
+  .leaf-card .leaf-mount { width: 104px; flex: none; padding: 7px; }
+  .leaf-card .h-tape { display: none; }
+  .leaf-rubric { order: 2; }
+  .leaf-page { order: 3; }
+  .leaf-weather { order: 4; }
+  .leaf-echoes { order: 5; }
+  .leaf-readings { order: 6; }
+  .leaf-lined { min-height: 252px; }
+}
+
 /* ══ Re-papered screens ═══════════════════════════════════════ */
 .page { max-width: 820px; margin: 0 auto; position: relative; animation: fadeIn .3s ease; }
 
@@ -195,20 +253,19 @@ textarea::placeholder, input::placeholder { color: currentColor; opacity: .45; }
 .position-label, .card-position, .cross-position-label { font-size: 14px; color: var(--soft); margin: 0; }
 
 /* Inputs */
-.search-input, .q-input, .card-input, .n-textarea, .daily-textarea {
+.search-input, .q-input, .card-input, .n-textarea {
   width: 100%; background: transparent; color: var(--ink); outline: none;
   border: 0; border-bottom: 1px solid var(--rule); border-radius: 0;
   font-family: 'IM Fell English', serif; font-size: 19px; padding: .35rem .1rem; transition: border-color .2s;
 }
 .search-input:focus, .q-input:focus, .card-input:focus { border-bottom-color: var(--ox); }
 .q-input { font-style: italic; font-size: 21px; }
-.n-textarea, .daily-textarea {
+.n-textarea {
   border: 0; resize: vertical; padding: 0 2px; line-height: 36px; font-family: 'Cedarville Cursive', cursive; font-size: 23px;
   background: repeating-linear-gradient(to bottom, transparent 0, transparent 35px, var(--rule) 35px, var(--rule) 36px);
   background-attachment: local;
 }
-.daily-textarea { min-height: 252px; }
-.n-textarea:focus, .daily-textarea:focus { outline: 1px dotted var(--gilt); outline-offset: 4px; }
+.n-textarea:focus { outline: 1px dotted var(--gilt); outline-offset: 4px; }
 
 .card-dropdown {
   position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 50; max-height: 240px; overflow-y: auto;
@@ -224,25 +281,24 @@ textarea::placeholder, input::placeholder { color: currentColor; opacity: .45; }
 .rev-toggle.active { color: var(--ox); border-color: var(--ox); }
 
 /* Buttons */
-.save-btn, .daily-save-btn, .cotd-log-btn {
+.save-btn, .cotd-log-btn {
   font-family: 'IM Fell English SC', serif; font-size: 16px; letter-spacing: .1em; cursor: pointer;
   color: var(--paper); background: var(--ox); border: 1px solid var(--ox); padding: .4rem 1.3rem;
   transition: background-color .2s, color .2s;
 }
-.save-btn:not(:disabled):hover, .daily-save-btn:hover { background: var(--ink); border-color: var(--ink); }
+.save-btn:not(:disabled):hover { background: var(--ink); border-color: var(--ink); }
 .save-btn:disabled { opacity: .35; cursor: default; }
-.cancel-btn, .daily-date-btn, .daily-today-btn, .prompt-nudge, .detail-back, .delete-btn {
+.cancel-btn, .daily-date-btn, .daily-today-btn, .detail-back, .delete-btn {
   font-family: 'IM Fell English SC', serif; font-size: 15px; letter-spacing: .08em; cursor: pointer;
   color: var(--soft); background: none; border: 1px solid var(--rule); padding: .35rem 1rem; transition: all .2s;
 }
-.cancel-btn:hover, .daily-date-btn:hover, .daily-today-btn:hover, .prompt-nudge:hover { color: var(--ox); border-color: var(--ox); }
+.cancel-btn:hover, .daily-date-btn:hover, .daily-today-btn:hover { color: var(--ox); border-color: var(--ox); }
 .daily-date-btn { padding: .1rem .6rem; font-family: 'IM Fell English', serif; font-size: 18px; }
 .daily-today-btn { padding: .15rem .6rem; font-size: 14px; }
 .detail-back { border: 0; padding: 0; margin: clamp(32px, 5vw, 56px) 0 1.2rem; color: var(--ox); }
 .detail-back:hover { color: var(--ink); }
 .delete-btn { border: 0; padding: .1rem .3rem; font-size: 15px; flex-shrink: 0; }
 .delete-btn:hover { color: var(--ox); }
-.prompt-nudge { border-style: dashed; margin-bottom: 1rem; font-family: 'IM Fell English', serif; font-style: italic; font-size: 16px; }
 .form-actions { display: flex; gap: .8rem; margin-top: 1.6rem; align-items: center; }
 
 /* Search & filters */
@@ -340,25 +396,22 @@ textarea::placeholder, input::placeholder { color: currentColor; opacity: .45; }
 .inline-meaning-text { font-family: 'IM Fell English', serif; font-style: italic; font-size: 18px; color: var(--soft); line-height: 1.35; }
 
 /* Daily page */
-.daily-date-nav { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; }
-.daily-date-display { font-family: 'IM Fell English', serif; font-style: italic; font-size: 22px; color: var(--ink); min-width: 180px; text-align: center; }
-.daily-moon-block { display: flex; align-items: center; gap: 1rem; padding: 14px 0; margin-bottom: 1.4rem; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
-.daily-moon-sym { display: flex; }
-.daily-moon-text { font-family: 'IM Fell English', serif; font-size: 24px; line-height: 1.15; }
-.daily-moon-desc { color: var(--soft); font-size: 15px; font-style: italic; }
-.mood-picker { display: flex; gap: .4rem .5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.mood-picker { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 2px; margin-bottom: 1rem; max-width: 420px; }
 .mood-btn {
-  display: flex; flex-direction: column; align-items: center; gap: .1rem; min-width: 64px; padding: .45rem .5rem; cursor: pointer;
-  background: none; border: 1px solid var(--rule); transition: all .2s;
+  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 2px 6px; min-width: 0;
+  background: none; border: 0; cursor: pointer; color: var(--soft);
 }
-.mood-btn:hover { border-color: var(--gilt); }
-.mood-btn.active { border-color: var(--ox); background-color: var(--mount); box-shadow: var(--lift); }
-.mood-emoji { font-size: 18px; }
+.mood-stamp { display: block; color: var(--soft); opacity: .42; transform: rotate(var(--tilt, 0deg)); transition: opacity .2s, color .2s, transform .2s; }
+.mood-btn:hover .mood-stamp { opacity: .75; color: var(--ink); }
+.mood-btn.active .mood-stamp { opacity: .92; color: var(--ox); animation: stampDown .32s cubic-bezier(.3, 1.6, .5, 1); }
 .mood-label { font-family: 'IM Fell English SC', serif; font-size: 13px; letter-spacing: .06em; color: var(--soft); }
 .mood-btn.active .mood-label { color: var(--ox); }
-.prompt-text { font-family: 'IM Fell English', serif; font-style: italic; font-size: 21px; line-height: 1.4; padding: .2rem 0 .2rem 1rem; margin-bottom: 1.2rem; border-left: 2px solid var(--ox); animation: fadeIn .4s ease; }
-.daily-save-row { display: flex; align-items: center; gap: .9rem; margin-top: 1rem; }
-.daily-saved { font-family: 'Cedarville Cursive', cursive; font-size: 20px; color: var(--verd); animation: fadeIn .3s ease; }
+@keyframes stampDown {
+  0% { transform: rotate(var(--tilt, 0deg)) scale(1.35); opacity: 0; }
+  60% { transform: rotate(var(--tilt, 0deg)) scale(.94); opacity: .95; }
+  100% { transform: rotate(var(--tilt, 0deg)) scale(1); opacity: .92; }
+}
+.cal-detail-stamp { display: inline-block; vertical-align: -4px; margin-right: .4rem; color: var(--ox); }
 
 /* Patterns */
 .stats-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin-bottom: 1.8rem; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
@@ -376,7 +429,8 @@ textarea::placeholder, input::placeholder { color: currentColor; opacity: .45; }
 .suit-dist, .mood-dist { display: flex; gap: 0; margin-top: .8rem; flex-wrap: wrap; width: fit-content; max-width: 100%; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
 .suit-dist > :first-child, .mood-dist > :first-child { border-left: 0; margin-left: 0; }
 .suit-dist-item, .mood-dist-item { display: flex; flex-direction: column; align-items: center; gap: 0; padding: .6rem 1rem; min-width: 76px; border-left: 1px solid var(--rule); margin-left: -1px; }
-.suit-dist-sym, .mood-dist-emoji { font-size: 18px; }
+.suit-dist-sym { font-size: 18px; }
+.mood-dist-emoji { display: block; color: var(--ox); opacity: .85; margin-bottom: 4px; }
 .suit-dist-count, .mood-dist-count { font-family: 'IM Fell English', serif; font-size: 24px; line-height: 1.1; }
 .suit-dist-name, .mood-dist-label { font-family: 'IM Fell English SC', serif; font-size: 13px; letter-spacing: .08em; color: var(--soft); }
 .pair-list { display: flex; flex-direction: column; border-top: 1px solid var(--ink); }
@@ -420,7 +474,7 @@ textarea::placeholder, input::placeholder { color: currentColor; opacity: .45; }
 .cal-dot { width: 5px; height: 5px; border-radius: 50%; display: inline-block; }
 .cal-dot.journal-dot { background: var(--verd); }
 .cal-dot.reading-dot { background: var(--ox); }
-.cal-mood-mini { font-size: 10px; line-height: 1; position: absolute; bottom: 3px; right: 4px; }
+.cal-mood-mini { line-height: 1; position: absolute; bottom: 3px; right: 4px; color: var(--ox); opacity: .75; }
 .cal-legend { display: flex; gap: 1.4rem; justify-content: center; margin-bottom: 1.4rem; }
 .cal-legend-item { font-family: 'IM Fell English SC', serif; font-size: 14px; letter-spacing: .08em; color: var(--soft); display: flex; align-items: center; gap: .4rem; }
 .cal-detail { background-color: var(--mount); background-image: var(--grain); box-shadow: var(--lift); padding: 20px 24px; }
@@ -506,7 +560,7 @@ textarea::placeholder, input::placeholder { color: currentColor; opacity: .45; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .h-flip-inner, .page, .reading-card, .lib-pick { transition: none; animation: none; }
+  .h-flip-inner, .page, .reading-card, .lib-pick, .mood-stamp { transition: none; animation: none !important; }
 }
 
 /* ── Carry the grimoire (export / import) ────────────────────── */
