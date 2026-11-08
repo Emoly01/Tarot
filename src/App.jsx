@@ -6,6 +6,7 @@ import { herbFor } from "./herbarium/herbs.js";
 import { cardNamed, cardSrc } from "./herbarium/deck.js";
 import { Fern, CardBack, Tally, Wheel, MoonBig, MoonGlyph } from "./herbarium/art.jsx";
 import { themeStyle, initialTheme } from "./herbarium/theme.js";
+import { MOODS, MoodStamp, stampTilt } from "./herbarium/stamps.jsx";
 import { packGrimoire, unpackGrimoire, mergeGrimoire, sendGrimoire } from "./herbarium/carry.js";
 import { syncAvailable, preload, wasSignedIn, watchAccount, signIn, signOut, connectBook, pushReadings, pushJournal } from "./herbarium/sync.js";
 const CardLibrary = lazy(() => import("./herbarium/Library.jsx"));
@@ -777,7 +778,7 @@ function excerpt(text, n = 240) {
   return cut.slice(0, Math.max(cut.lastIndexOf(" "), n * 0.6)).replace(/[\s,;:.—-]+$/, "") + "…";
 }
 
-function DailyLeaf({ theme, dateKey, journal, readings, moods, onWrite, onMood, onGoDate, onOpenReading, onNavigate }) {
+function DailyLeaf({ theme, dateKey, journal, readings, onWrite, onMood, onGoDate, onOpenReading, onNavigate }) {
   const now = new Date(), todayKey = toDateKey(now);
   const day = atNoon(dateKey), isToday = dateKey === todayKey;
   const entry = journal[dateKey] || {};
@@ -881,13 +882,15 @@ function DailyLeaf({ theme, dateKey, journal, readings, moods, onWrite, onMood, 
           <section className="leaf-weather">
             <SectionLabel>The weather inside</SectionLabel>
             <div className="mood-picker">
-              {moods.map(m => (
-                <button key={m.label} className={`mood-btn ${entry.mood === m.label ? "active" : ""}`} aria-pressed={entry.mood === m.label}
-                  onClick={() => onMood(dateKey, entry.mood === m.label ? null : m.label)}>
-                  <span className="mood-emoji">{m.emoji}</span>
-                  <span className="mood-label">{m.label}</span>
-                </button>
-              ))}
+              {MOODS.map(m => {
+                const on = entry.mood === m;
+                return (
+                  <button key={m} className={`mood-btn ${on ? "active" : ""}`} aria-pressed={on} onClick={() => onMood(dateKey, on ? null : m)}>
+                    <span className="mood-stamp" style={{ "--tilt": `${stampTilt(m)}deg` }}><MoodStamp mood={m} size={46} /></span>
+                    <span className="mood-label">{m}</span>
+                  </button>
+                );
+              })}
             </div>
           </section>
 
@@ -1108,7 +1111,6 @@ function GrimoireCalendar({ journal, readings, onSelectDate, onSelectReading }) 
     ? `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(selectedDay).padStart(2, "0")}`
     : null;
 
-  const moods = { Grounded: "🌿", Energized: "🔥", Emotional: "🌊", Foggy: "☁️", Restless: "⚡", Reflective: "🌙", Quiet: "🕯️", Magical: "✨" };
 
   return (
     <div className="cal-container">
@@ -1158,7 +1160,7 @@ function GrimoireCalendar({ journal, readings, onSelectDate, onSelectReading }) 
                 </div>
               )}
               {data?.mood && (
-                <span className="cal-mood-mini">{moods[data.mood] || ""}</span>
+                <span className="cal-mood-mini"><MoodStamp mood={data.mood} size={15} worn={false} title={data.mood} /></span>
               )}
             </div>
           );
@@ -1188,7 +1190,7 @@ function GrimoireCalendar({ journal, readings, onSelectDate, onSelectReading }) 
               onClick={() => onSelectDate(selectedKey)}
             >
               <span className="cal-detail-label">
-                {selectedDayData.mood && <span style={{ marginRight: "0.3rem" }}>{moods[selectedDayData.mood]}</span>}
+                {selectedDayData.mood && <span className="cal-detail-stamp"><MoodStamp mood={selectedDayData.mood} size={20} worn={false} title={selectedDayData.mood} /></span>}
                 Journal Entry
               </span>
               {journal[selectedKey]?.text?.trim() && (
@@ -1549,16 +1551,6 @@ export default function TarotJournal() {
   }, [readings]);
 
   const canSave = SPREADS[spread].positions.every((_, i) => cards[i]?.trim());
-  const moods = [
-    { emoji: "🌿", label: "Grounded" },
-    { emoji: "🔥", label: "Energized" },
-    { emoji: "🌊", label: "Emotional" },
-    { emoji: "☁️", label: "Foggy" },
-    { emoji: "⚡", label: "Restless" },
-    { emoji: "🌙", label: "Reflective" },
-    { emoji: "🕯️", label: "Quiet" },
-    { emoji: "✨", label: "Magical" },
-  ];
 
   const moodDistribution = useMemo(() => {
     const dist = {};
@@ -1790,7 +1782,7 @@ export default function TarotJournal() {
       {/* ════ Daily Page ════ */}
       {view === "daily" && (
         <DailyLeaf key={dailyDate}
-          theme={theme} dateKey={dailyDate} journal={journal} readings={readings} moods={moods}
+          theme={theme} dateKey={dailyDate} journal={journal} readings={readings}
           onWrite={(key, text) => saveDay(key, { text })}
           onMood={(key, mood) => saveDay(key, { mood })}
           onGoDate={key => { setDailyDate(key); window.scrollTo({ top: 0 }); }}
@@ -1993,10 +1985,9 @@ export default function TarotJournal() {
                       <p className="stat-label">How you've been feeling</p>
                       <div className="mood-dist">
                         {moodDistribution.map(([mood, count]) => {
-                          const m = moods.find(x => x.label === mood);
                           return (
                             <div key={mood} className="mood-dist-item">
-                              <span className="mood-dist-emoji">{m?.emoji || "·"}</span>
+                              <span className="mood-dist-emoji" style={{ transform: `rotate(${stampTilt(mood)}deg)` }}><MoodStamp mood={mood} size={30} /></span>
                               <span className="mood-dist-count">{count}</span>
                               <span className="mood-dist-label">{mood}</span>
                             </div>
