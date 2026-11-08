@@ -38,8 +38,7 @@ function getMoonDescription(phase) {
 }
 
 // ── Reflection Prompts by Moon Phase ─────────────────────────
-function getReflectionPrompts(phase) {
-  const prompts = {
+const MOON_PROMPTS = {
     "New Moon": [
       "What intention am I planting today? What do I want to grow?",
       "What am I ready to begin that I've been putting off?",
@@ -88,12 +87,30 @@ function getReflectionPrompts(phase) {
       "What dreams have been visiting me lately?",
       "What does my body need right now that I've been ignoring?",
     ],
-  };
-  const list = prompts[phase] || prompts["New Moon"];
-  // Pick one based on the day so it feels fresh but consistent within a day
-  const today = new Date();
-  const dayHash = today.getFullYear() * 366 + today.getMonth() * 31 + today.getDate();
-  return list[dayHash % list.length];
+};
+
+// The day's card read through the moon: {kw} is the card's first keyword
+const CARD_RUBRICS = {
+  "New Moon": ["If you planted {kw} on purpose tonight, what would it grow into?", "Where is {kw} asking to begin in you?"],
+  "Waxing Crescent": ["Where is {kw} already sprouting, however small?", "What one small step would feed {kw} today?"],
+  "First Quarter": ["Where is {kw} pushing against you, and what does it want you to decide?", "What would you do about {kw} if you stopped waiting for permission?"],
+  "Waxing Gibbous": ["What still needs refining before {kw} is ready?", "Where are you rushing {kw}, and what would patience look like?"],
+  "Full Moon": ["What is {kw} lighting up that you've been avoiding looking at?", "If {kw} were in full bloom today, what would you say out loud?"],
+  "Waning Gibbous": ["What has {kw} taught you this cycle?", "Who else might need what you've learned about {kw}?"],
+  "Last Quarter": ["What part of {kw} are you ready to put down?", "Where are you still holding on to {kw} after it has done its work?"],
+  "Waning Crescent": ["What would it mean to rest with {kw} instead of fixing it?", "Where has {kw} been visiting you lately: in dreams, in your body, in the quiet?"],
+};
+
+// Questions for a day, card-and-moon ones first, then the moon's own.
+// The starting question is fixed per date so a page keeps its question.
+function rubricsFor(dateKey, phase, draw) {
+  const moon = MOON_PROMPTS[phase] || MOON_PROMPTS["New Moon"];
+  const meaning = draw && CARD_MEANINGS[draw.card];
+  const kw = meaning && lowerFirst((draw.reversed ? meaning.rev : meaning.up).split(",")[0].trim());
+  const card = kw ? (CARD_RUBRICS[phase] || []).map(t => t.replace("{kw}", kw)) : [];
+  let h = 0;
+  for (const ch of dateKey) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return { list: [...card, ...moon], start: h % (card.length || moon.length) };
 }
 
 // ── Full 78 card Tarot deck ──────────────────────────────────
@@ -750,6 +767,198 @@ function HerbariumHome({ theme, readings, journal, cardPairs, onLog, onUpdateNot
   );
 }
 
+// ── The Daily Page: one leaf of the grimoire ─────────────────
+const atNoon = key => new Date(key + "T12:00:00");
+const pageText = entry => entry?.text?.trim() || "";
+// A page's opening, cut at a word near n characters
+function excerpt(text, n = 240) {
+  if (text.length <= n) return text;
+  const cut = text.slice(0, n);
+  return cut.slice(0, Math.max(cut.lastIndexOf(" "), n * 0.6)).replace(/[\s,;:.—-]+$/, "") + "…";
+}
+
+function DailyLeaf({ theme, dateKey, journal, readings, moods, onWrite, onMood, onGoDate, onOpenReading, onNavigate }) {
+  const now = new Date(), todayKey = toDateKey(now);
+  const day = atNoon(dateKey), isToday = dateKey === todayKey;
+  const entry = journal[dateKey] || {};
+  const text = entry.text || "";
+  const phase = moonPhaseOfDay(day);
+  const shift = n => { const d = new Date(day); d.setDate(d.getDate() + n); return toDateKey(d); };
+
+  // The day's card: the register's card of the day, or today's draw once it's been turned on Home
+  const logged = readings.find(r => r.isCardOfDay && toDateKey(new Date(r.ts)) === dateKey);
+  let draw = logged ? { card: logged.cards[0].card, reversed: logged.cards[0].reversed, entered: true } : null;
+  let faceDown = false;
+  if (!draw && isToday) {
+    const c = loadCotd(todayKey);
+    if (c.revealed) draw = { card: c.card, reversed: c.reversed, entered: false };
+    else faceDown = true;
+  }
+  const herb = draw && herbFor(draw.card), plate = draw && cardNamed(draw.card);
+  const meaning = draw && CARD_MEANINGS[draw.card];
+
+  // The rubric: a question from the card and the moon, with others a touch away
+  const [turn, setTurn] = useState(0);
+  const rubrics = rubricsFor(dateKey, phase, draw);
+  const rubric = rubrics.list[(rubrics.start + turn) % rubrics.list.length];
+  const rubricHead = draw
+    ? `${theCard(draw.card, true)}${draw.reversed ? ", reversed," : ""} ${underMoon(phase)}`
+    : sentenceCase(underMoon(phase));
+
+  // A past page reads as a page until you choose to amend it
+  const [editing, setEditing] = useState(isToday || !text.trim());
+
+  // Echoes: what you wrote before, at moments that rhyme with this one
+  const earlier = Object.keys(journal).filter(k => k < dateKey && pageText(journal[k])).sort().reverse();
+  const echoes = [], seen = new Set();
+  const echo = (key, label, body, open) => {
+    if (!key || !body || seen.has(key)) return;
+    seen.add(key);
+    echoes.push({ key, label, body, open: open || (() => onGoDate(key)) });
+  };
+  if (draw) {
+    const prior = readings.find(r => r !== logged && toDateKey(new Date(r.ts)) < dateKey && r.cards.some(c => c.card === draw.card));
+    if (prior) {
+      const pk = toDateKey(new Date(prior.ts));
+      const notes = prior.notes?.trim();
+      if (pageText(journal[pk])) echo(pk, `When ${theCard(draw.card)} last visited`, pageText(journal[pk]));
+      else if (notes) echo(pk, `When ${theCard(draw.card)} last visited`, notes, () => onOpenReading(prior));
+    }
+  }
+  const lastMoon = earlier.find(k => moonPhaseOfDay(atNoon(k)) === phase && daysBetween(atNoon(k), day) >= 20);
+  echo(lastMoon, `Last ${phase.toLowerCase()}`, lastMoon && pageText(journal[lastMoon]));
+  const yearAgo = `${day.getFullYear() - 1}${dateKey.slice(4)}`;
+  echo(yearAgo, "A year ago today", pageText(journal[yearAgo]));
+  echo(earlier[0], earlier[0] === shift(-1) ? "The day before" : "The last page you wrote", earlier[0] && pageText(journal[earlier[0]]));
+
+  const dayReadings = readings.filter(r => toDateKey(new Date(r.ts)) === dateKey);
+  const kept = entry.updatedAt && new Date(entry.updatedAt);
+  const keptAt = kept && (toDateKey(kept) === todayKey
+    ? `at ${kept.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`
+    : `on ${weekdayDate(kept, now)}`);
+
+  return (
+    <div className="page leaf">
+      <header className="leaf-head">
+        <div className="h-label">Folio {roman(dayOfYear(day)).toLowerCase()}{isToday ? " · today" : ""}</div>
+        <h2 className="leaf-date">{longDate(day)}</h2>
+        <div className="leaf-moon">
+          <MoonGlyph angle={moonAngle(day)} size={20} title={phase} />
+          <span>{sentenceCase(phase)} · {getMoonDescription(phase)}</span>
+        </div>
+        <nav className="leaf-turn" aria-label="Turn the page">
+          <button className="h-quiet-link" onClick={() => onGoDate(shift(-1))}>← the day before</button>
+          {!isToday && <button className="h-quiet-link" onClick={() => onGoDate(todayKey)}>back to today</button>}
+          {!isToday && <button className="h-quiet-link" onClick={() => onGoDate(shift(1))}>the day after →</button>}
+        </nav>
+      </header>
+
+      <div className="leaf-body">
+        <div className="leaf-main">
+          <section className="leaf-rubric">
+            <div className="leaf-rubric-head">{rubricHead}</div>
+            <p className="leaf-rubric-q">{rubric}</p>
+            {rubrics.list.length > 1 && (
+              <button className="h-quiet-link" onClick={() => setTurn(t => t + 1)}>ask me another</button>
+            )}
+          </section>
+
+          <section className="leaf-page">
+            <SectionLabel>The page</SectionLabel>
+            {editing ? (
+              <textarea className="h-lined leaf-lined" autoFocus={!isToday && !!text.trim()}
+                placeholder={isToday ? "begin anywhere…" : "this day was left blank. you can still write it…"}
+                value={text} onChange={e => onWrite(dateKey, e.target.value)} />
+            ) : (
+              <>
+                <p className="h-entry leaf-written"><span className="h-dropcap">{text.trim().charAt(0)}</span>{text.trim().slice(1)}</p>
+                <button className="h-quiet-link" onClick={() => setEditing(true)}>amend this page</button>
+              </>
+            )}
+            {keptAt && pageText(entry) && <div className="leaf-kept">kept in the grimoire {keptAt}</div>}
+          </section>
+
+          <section className="leaf-weather">
+            <SectionLabel>The weather inside</SectionLabel>
+            <div className="mood-picker">
+              {moods.map(m => (
+                <button key={m.label} className={`mood-btn ${entry.mood === m.label ? "active" : ""}`} aria-pressed={entry.mood === m.label}
+                  onClick={() => onMood(dateKey, entry.mood === m.label ? null : m.label)}>
+                  <span className="mood-emoji">{m.emoji}</span>
+                  <span className="mood-label">{m.label}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          {dayReadings.length > 0 && (
+            <section className="leaf-readings">
+              <SectionLabel>In the register this day</SectionLabel>
+              <div className="h-register">
+                {dayReadings.map(r => {
+                  const names = r.cards.filter(c => c.card).map(c => c.card);
+                  return (
+                    <button key={r.id} className="h-register-row" onClick={() => onOpenReading(r)}>
+                      <span className="h-reg-spread">{r.isCardOfDay ? "Card of the day" : REGISTER_SPREADS[r.spread] || SPREADS[r.spread]?.label}</span>
+                      <span className="h-reg-cards">{names.slice(0, 3).join(" · ")}{names.length > 3 ? `, and ${numberWords(names.length - 3)} more` : ""}</span>
+                      {r.question && !r.isCardOfDay && <span className="h-reg-q">“{r.question}”</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+        </div>
+
+        <aside className="leaf-side">
+          <section className="leaf-card">
+            {draw ? (
+              <>
+                <div className="leaf-mount">
+                  <div className="h-tape h-tape-tl" />
+                  {plate && <img src={cardSrc(plate, theme)} alt="" style={draw.reversed ? { transform: "rotate(180deg)" } : undefined} />}
+                </div>
+                <div className="leaf-card-text">
+                  <div className="leaf-card-name">{draw.card}</div>
+                  {herb && <div className="h-face-latin" style={{ textAlign: "left" }}>{herb.common}, <i>{herb.latin}</i></div>}
+                  {meaning && <div className="leaf-card-kw"><span>{draw.reversed ? "Reversed" : "Upright"}</span> {lowerFirst(draw.reversed ? meaning.rev : meaning.up)}</div>}
+                  {!draw.entered && <button className="h-quiet-link" onClick={() => onNavigate("cotd")}>not yet in the register →</button>}
+                </div>
+              </>
+            ) : faceDown ? (
+              <>
+                <div className="leaf-mount leaf-mount-back"><CardBack /></div>
+                <div className="leaf-card-text">
+                  <p className="h-note">Today's card is still face down.</p>
+                  <button className="h-quiet-link" onClick={() => onNavigate("cotd")}>turn it over →</button>
+                </div>
+              </>
+            ) : (
+              <p className="h-note leaf-no-card">No card was pressed on this day.</p>
+            )}
+          </section>
+
+          <section className="leaf-echoes">
+            <SectionLabel>Echoes</SectionLabel>
+            {echoes.length ? echoes.map(e => (
+              <div key={e.key + e.label} className="leaf-echo">
+                <div className="leaf-echo-head">
+                  <MoonGlyph angle={moonAngle(atNoon(e.key))} size={14} title={moonPhaseOfDay(atNoon(e.key))} />
+                  <span>{e.label} · {dotDate(atNoon(e.key))}</span>
+                </div>
+                <p className="leaf-echo-text">{excerpt(e.body)}</p>
+                <button className="h-quiet-link" onClick={e.open}>turn to that page →</button>
+              </div>
+            )) : (
+              <p className="h-note">No echoes yet. Write this page, and the next {phase.toLowerCase()} will answer you with it.</p>
+            )}
+          </section>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
 // ── Card Timeline (Cards Over Time) ──────────────────────────
 function CardTimeline({ readings }) {
   // Group readings by month, show top cards per month
@@ -1065,10 +1274,6 @@ export default function TarotJournal() {
 
   // Daily journal state
   const [dailyDate, setDailyDate] = useState(toDateKey(new Date()));
-  const [dailyText, setDailyText] = useState("");
-  const [dailyMood, setDailyMood] = useState(null);
-  const [dailySaving, setDailySaving] = useState(false);
-  const [showPrompt, setShowPrompt] = useState(false);
 
   // ── Storage ────────────────────────────────────────────────
   useEffect(() => {
@@ -1184,28 +1389,6 @@ export default function TarotJournal() {
     schedulePush("journal");
   };
 
-  useEffect(() => {
-    const entry = journal[dailyDate];
-    if (entry) { setDailyText(entry.text || ""); setDailyMood(entry.mood || null); }
-    else { setDailyText(""); setDailyMood(null); }
-    setShowPrompt(false);
-  }, [dailyDate, journal]);
-
-  const saveDailyEntry = () => {
-    setDailySaving(true);
-    const updated = {
-      ...journal,
-      [dailyDate]: {
-        text: dailyText.trim(), mood: dailyMood,
-        moonPhase: getMoonPhase(new Date(dailyDate + "T12:00:00")).name,
-        updatedAt: Date.now(),
-      },
-    };
-    if (!dailyText.trim() && !dailyMood) delete updated[dailyDate];
-    saveJournal(updated);
-    setTimeout(() => setDailySaving(false), 600);
-  };
-
   // ── Paper & navigation ─────────────────────────────────────
   const paper = useMemo(() => themeStyle(theme), [theme]);
   useEffect(() => {
@@ -1227,14 +1410,14 @@ export default function TarotJournal() {
     window.scrollTo({ top: 0 });
   };
 
-  // Home's "Today" page writes straight into the journal, keeping any mood
-  const saveTodayText = (text) => {
-    const key = toDateKey(new Date());
-    const prev = journal[key] || {};
-    const updated = { ...journal, [key]: { ...prev, text, moonPhase: getMoonPhase(new Date()).name, updatedAt: Date.now() } };
-    if (!text.trim() && !prev.mood) delete updated[key];
+  // Pages write straight into the journal as you type; an empty page with no mood is removed
+  const saveDay = (key, patch) => {
+    const next = { ...journal[key], ...patch, moonPhase: moonPhaseOfDay(new Date(key + "T12:00:00")), updatedAt: Date.now() };
+    const updated = { ...journal, [key]: next };
+    if (!next.text?.trim() && !next.mood) delete updated[key];
     saveJournal(updated);
   };
+  const saveTodayText = (text) => saveDay(toDateKey(new Date()), { text });
 
   // ── Carrying the grimoire between devices ──────────────────
   const [carryNote, setCarryNote] = useState("");
@@ -1422,7 +1605,7 @@ export default function TarotJournal() {
         />
       )}
 
-      {view !== "home" && view !== "detail" && view !== "library" && (
+      {view !== "home" && view !== "detail" && view !== "library" && view !== "daily" && (
         <h2 className="page-heading">{{ journal: "Register of readings", new: "Of a new reading", daily: "The Daily Page", calendar: "Calendar of days", stats: "Patterns" }[view]}</h2>
       )}
 
@@ -1604,93 +1787,16 @@ export default function TarotJournal() {
         </div>
       )}
 
-      {/* ════ Daily Journal ════ */}
+      {/* ════ Daily Page ════ */}
       {view === "daily" && (
-        <div className="page">
-          <div className="daily-date-nav" style={{ marginBottom: "1rem" }}>
-            <button className="daily-date-btn" onClick={() => {
-              const d = new Date(dailyDate + "T12:00:00"); d.setDate(d.getDate() - 1); setDailyDate(toDateKey(d));
-            }}>←</button>
-            <span className="daily-date-display">{formatDate(new Date(dailyDate + "T12:00:00"))}</span>
-            <button className="daily-date-btn" onClick={() => {
-              const d = new Date(dailyDate + "T12:00:00"); d.setDate(d.getDate() + 1);
-              if (toDateKey(d) <= toDateKey(new Date())) setDailyDate(toDateKey(d));
-            }}>→</button>
-            {dailyDate !== toDateKey(new Date()) && (
-              <button className="daily-today-btn" onClick={() => setDailyDate(toDateKey(new Date()))}>Today</button>
-            )}
-          </div>
-
-          {(() => {
-            const phase = getMoonPhase(new Date(dailyDate + "T12:00:00"));
-            return (
-              <div className="daily-moon-block">
-                <span className="daily-moon-sym"><MoonGlyph angle={moonAngle(new Date(dailyDate + "T12:00:00"))} size={44} title={phase.name} /></span>
-                <div>
-                  <p className="daily-moon-text">{phase.name}</p>
-                  <p className="daily-moon-desc">{getMoonDescription(phase.name)}</p>
-                </div>
-              </div>
-            );
-          })()}
-
-          <div className="form-section">
-            <span className="form-label">How are you feeling?</span>
-            <div className="mood-picker">
-              {moods.map(m => (
-                <button key={m.label} className={`mood-btn ${dailyMood === m.label ? "active" : ""}`} onClick={() => setDailyMood(dailyMood === m.label ? null : m.label)}>
-                  <span className="mood-emoji">{m.emoji}</span>
-                  <span className="mood-label">{m.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Reflection prompt nudge */}
-          {!showPrompt ? (
-            <button className="prompt-nudge" onClick={() => setShowPrompt(true)}>
-              ✦ need a nudge?
-            </button>
-          ) : (
-            <div className="prompt-text">
-              {getReflectionPrompts(getMoonPhase(new Date(dailyDate + "T12:00:00")).name)}
-            </div>
-          )}
-
-          <div className="form-section">
-            <span className="form-label">Today's Page</span>
-            <textarea
-              className="daily-textarea"
-              placeholder="What's moving through you today? What do you want to remember?..."
-              value={dailyText}
-              onChange={e => setDailyText(e.target.value)}
-            />
-          </div>
-
-          {readings.filter(r => toDateKey(new Date(r.ts)) === dailyDate).length > 0 && (
-            <div style={{ marginTop: "1rem" }}>
-              <span className="form-label">Readings on this day</span>
-              {readings.filter(r => toDateKey(new Date(r.ts)) === dailyDate).map(r => (
-                <div key={r.id} className="reading-card" style={{ marginTop: "0.4rem" }} onClick={() => { setSelectedReading(r); setView("detail"); }}>
-                  <p className="reading-date"><span className="reading-spread-badge">{SPREADS[r.spread]?.label}</span></p>
-                  {r.question && <p className="reading-question" style={{ fontSize: "0.85rem" }}>“{r.question}”</p>}
-                  <div className="card-preview">
-                    {r.cards.filter(c => c.card).map((c, i) => (
-                      <span key={i} className="card-chip" style={{ color: suitColor(c.card), fontSize: "0.72rem" }}>
-                        {suitSymbol(c.card)} {c.card}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="daily-save-row">
-            <button className="daily-save-btn" onClick={saveDailyEntry}>Save Entry</button>
-            {dailySaving && <span className="daily-saved">✓ saved</span>}
-          </div>
-        </div>
+        <DailyLeaf key={dailyDate}
+          theme={theme} dateKey={dailyDate} journal={journal} readings={readings} moods={moods}
+          onWrite={(key, text) => saveDay(key, { text })}
+          onMood={(key, mood) => saveDay(key, { mood })}
+          onGoDate={key => { setDailyDate(key); window.scrollTo({ top: 0 }); }}
+          onOpenReading={r => { setSelectedReading(r); setView("detail"); window.scrollTo({ top: 0 }); }}
+          onNavigate={go}
+        />
       )}
 
       {/* ════ Calendar ════ */}
